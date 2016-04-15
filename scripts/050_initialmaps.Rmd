@@ -1,0 +1,237 @@
+---
+title: "Untitled"
+author: "Tourism Economics"
+date: "April 14, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+
+# this approach is based on the following article
+#http://www.r-bloggers.com/creating-styled-google-maps-in-ggmap/
+
+library(RJSONIO)
+library(ggmap)
+library(magrittr)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(RColorBrewer)
+library(grid)
+library(directlabels)
+
+
+```
+
+```{r}
+
+load("output_data/facility_info.Rdata")
+
+
+gkey <- c("AIzaSyBOybTC9pXmOwVo0itauCJ_PnLziPekN3E")
+```
+
+```{r}
+
+####
+# 
+# set up color palette
+display.brewer.pal(10, "RdBu")
+mypallete <- brewer.pal( 10 , "RdBu" )
+
+```
+
+
+```{r}
+
+###########
+
+prop_data1 <- facility_info %>%
+  rename(lat = latitude) %>%
+  rename(lon = longitude) %>%
+  select(str_number:state, postal_code:tract, postal_code5, postal_codep4, rooms:affiliation, county, msa, lat, lon)
+
+### filter to San Francisco
+prop_data2 <- prop_data1 %>%
+  filter(msa == "San Francisco-Oakland-Hayward, CA")
+  #filter(market == "San Francisco/San Mateo, CA")
+
+```
+
+
+```{r}
+########
+#
+# created my own style string by creating and copying from
+# http://gmaps-samples-v3.googlecode.com/svn/trunk/styledmaps/wizard/index.html
+
+style_string_2 <- c("feature:road.highway|element:geometry.fill|visibility:on|color:0x808080|weight:0.4&style=feature:administrative.province|element:geometry|visibility:on|color:0x808080|weight:2.9&style=feature:landscape.man_made|element:geometry.fill|color:0xf4a583&style=feature:road.highway|element:labels|visibility:off")
+style_string_3 <- c("feature:road.highway|element:geometry.fill|visibility:on|color:0x808080|weight:0.1&style=feature:road.highway|element:geometry.stroke|visibility:on|color:0x808080&style=feature:road.highway|element:labels.icon|visibility:off&style=feature:poi.park|visibility:off&style=feature:landscape.man_made|element:geometry.fill|visibility:on|weight:0.1|color:0xa5a5a5|lightness:50")
+style_string_4 <- c("feature:road.highway|element:geometry.fill|visibility:on|color:0x808080|weight:0.1&style=feature:road.highway|element:geometry.stroke|visibility:on|color:0x808080&style=feature:road.highway|element:labels.icon|visibility:off&style=feature:poi.park|visibility:off&style=feature:landscape.man_made|element:geometry.fill|visibility:on|weight:0.1|color:0xa5a5a5|lightness:50&style=feature:administrative.province|element:geometry|visibility:on|color:0x808080|weight:2.7")
+
+style_string_background <- c("feature:road.highway.controlled_access|element:geometry.stroke|visibility:on|color:0x808080&style=element:labels|visibility:off&style=feature:road.highway|element:geometry|visibility:on|color:0x808080&style=feature:road.arterial|element:geometry.fill|color:0x808080|visibility:on&style=feature:poi.park|visibility:off&style=feature:landscape.man_made|visibility:on|color:0x808080|lightness:49&style=feature:administrative.province|element:geometry|visibility:on|color:0x808080|weight:2.8")
+
+style_string_adminlabels <- c("feature:water|visibility:off&style=feature:poi|visibility:off&style=feature:road|visibility:off&style=feature:transit|visibility:off&style=feature:administrative|element:geometry|visibility:off&style=feature:landscape|element:geometry|visibility:off")
+
+http://maps.googleapis.com/maps/api/staticmap?center=40.045489,-115.657539&zoom=6&format=png&sensor=false&size=640x480&maptype=roadmap&style=feature:water|visibility:off&style=feature:poi|visibility:off&style=feature:road|visibility:off&style=feature:transit|visibility:off&style=feature:administrative|element:geometry|visibility:off&style=feature:landscape|element:geometry|visibility:off
+
+```
+
+
+
+
+```{r}
+
+# this looks very helpful to consider
+#http://stackoverflow.com/questions/19307896/using-ggplots-ggmap-function-to-superimpose-two-maps-on-top-of-each-other
+
+############
+#
+# create map
+temp <- prop_data2
+
+
+# instead used this approach of specifying a center
+cent <- c(-122.383575, 37.678386)
+map_background <- get_map(location=cent, zoom = 9, map="toner-background")
+map_lines <- get_stamenmap(location=cent, size=c(640,640), zoom = 9, map="toner-lines")
+map_labels <- get_stamenmap(location=cent, size=c(640,640), zoom = 9, map="toner-labels")
+
+ggmap(map_background) +
+  geom_point(data = temp,
+             aes(x = lon, y = lat, size = 1),
+             color = "blue", alpha = 0.8) + 
+  scale_size_identity(guide = "none") + 
+  inset_ggmap(map_lines) + 
+  inset_ggmap(map_labels)
+
+
+
+map_background <- get_googlemap(center=cent, size=c(640,640), scale = 2, zoom = 9, style=style_string_background, maptype="roadmap", key=gkey)
+ggmap(map_background)
+
+map_labels <- get_googlemap(center=cent, size=c(640,640), scale = 2, zoom = 9, style=style_string_adminlabels, maptype="roadmap", key=gkey, format="png8")
+ggmap(map_labels)
+
+str(map_labels)
+
+map_labels <- get_map(location=cent, zoom = 9, map="toner-labels")
+ggmap(map_labels)
+
+map_background <- get_map(location=cent, zoom = 9, map="toner-background")
+ggmap(map_background)
+
+map_lines <- get_stamenmap(location=cent, size=c(640,640), zoom = 9, map="toner-lines")
+map_labels <- get_map(location=cent, zoom = 9, map="toner-labels")
+ggmap(map_labels)
+
+ggmap(map_background) +
+
+  geom_point(data = temp,
+             aes(x = lon, y = lat, size = 1),
+             color = "blue", alpha = 0.8) + 
+  scale_size_identity(guide = "none") + 
+      inset_ggmap(map_labels) +
+#  inset_ggmap(map_lines) + 
+
+
+
+
+
+
+# takes the map and adds the legend
+p <- mymap + geom_point(data = temp,aes(x=lon,y=lat, group=tract, color=tract), size=2)
+#p <- p + scale_colour_manual(
+#  values = c("Existing" = "grey30","Recently opened" = mypallete[3],"Proposed" = mypallete[2])
+#  guide = guide_legend(title = "Casinos", title.theme = element_text(size=8, face="bold", angle = 0)))
+
+  # format legend text
+p <- p +  theme(legend.text = element_text(size = 6, face = 'plain')) 
+  # put white background
+p <- p +    theme(legend.key = element_rect(colour = 'white', linetype=NULL)) 
+  # put legend in the lower right corner
+p <- p +    theme(legend.justification=c(0,0), legend.position=c(0,0))
+p
+ggsave(filename="output_data/mymap_nolabels.png", width=5, height=5)
+
+
+```
+
+
+
+
+```{r}
+
+############
+#
+# create map
+temp <- prop_data2 # %>%
+  #filter(include_on_map == "Yes")
+
+
+# this approach of using the visible argument didn't seem to work
+# vis <- temp %>%
+#   select(lon, lat) 
+# mymap <- ggmap(get_googlemap(visible=vis, size=c(640,640), scale = 2, zoom = 8, style=style_string_2, maptype="roadmap", key="AIzaSyBOybTC9pXmOwVo0itauCJ_PnLziPekN3E"), extent="device")
+# mymap
+
+
+# instead used this approach of specifying a center
+cent <- c(-122.383575, 37.678386)
+mymap <- ggmap(get_googlemap(center=cent, size=c(640,640), scale = 2, zoom = 9, style=style_string_4, maptype="roadmap", key="AIzaSyBOybTC9pXmOwVo0itauCJ_PnLziPekN3E"), extent="device")
+mymap
+
+# takes the map and adds the legend
+p <- mymap + geom_point(data = temp,aes(x=lon,y=lat, group=tract, color=tract), size=2)
+#p <- p + scale_colour_manual(
+#  values = c("Existing" = "grey30","Recently opened" = mypallete[3],"Proposed" = mypallete[2])
+#  guide = guide_legend(title = "Casinos", title.theme = element_text(size=8, face="bold", angle = 0)))
+
+  # format legend text
+p <- p +  theme(legend.text = element_text(size = 6, face = 'plain')) 
+  # put white background
+p <- p +    theme(legend.key = element_rect(colour = 'white', linetype=NULL)) 
+  # put legend in the lower right corner
+p <- p +    theme(legend.justification=c(0,0), legend.position=c(0,0))
+p
+ggsave(filename="output_data/mymap_nolabels.png", width=5, height=5)
+
+# add simple labels
+p <- p + geom_text(data=temp,aes(x=lon, y=lat, label=map_name),size=3, colour="black", hjust=0, vjust=1.2)
+p
+ggsave(filename="output_data/mymap_labels.png", width=6.5, height=6.5)
+
+# use a direct labels approach based on the following great post
+# http://stackoverflow.com/questions/30178954/dynamic-data-point-label-positioning-in-ggmap
+
+draw.rects.modified <- function(d,...){
+  if(is.null(d$box.color))d$box.color <- NA
+  if(is.null(d$fill))d$fill <- "grey95"
+  for(i in 1:nrow(d)){
+    with(d[i,],{
+      grid.rect(gp = gpar(col = box.color, fill = fill),
+                vp = viewport(x, y, w, h, "cm", c(hjust, vjust=0.25), angle=rot))
+    })
+  }
+  d
+}
+
+enlarge.box.modified <- function(d,...){
+  if(!"h"%in%names(d))stop("need to have already calculated height and width.")
+  calc.borders(within(d,{
+    w <- 0.9*w
+    h <- 1.1*h
+  }))
+}
+
+boxes <-
+  list("top.bumptwice", "calc.boxes",  "enlarge.box.modified", "draw.rects.modified")
+
+mymap + 
+  geom_point(data = temp,aes(x = lon, y = lat), 
+             alpha = 1, fill = "red", pch = 21, size = 6) + 
+  geom_dl(data = temp, aes(label = map_name), method = list(dl.trans(y = y + 0.4), 
+                                                        "boxes", cex = .8, fontface = "bold"))
+ggsave(filename="output_data/mymap_dllabels.png", width=6.5, height=6.5)
+```
