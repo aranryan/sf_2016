@@ -1,0 +1,246 @@
+---
+title: "Load SF trend history"
+author: "Tourism Economics"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(arlodr)
+library(xts, warn.conflicts=FALSE)
+library(dplyr, warn.conflicts=FALSE)
+library(tidyr, warn.conflicts=FALSE)
+library(readxl)
+library(lubridate, warn.conflicts=FALSE)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+fpath <- c("~/Project/R projects/sf_2016/") 
+
+
+fname1 <- paste0(fpath, "input_data/sf_trend/STR Trend Database 2005-present_201603-AR modified.xlsx")
+
+```
+
+Define twp temporary clean up functions
+```{r}
+
+clean_up_1 <- function(df) {
+  df_2 <- df %>%
+  # drop columns that are all NA
+  .[, colSums(is.na(.)) != nrow(.)] 
+
+# initial clean up of column names
+colnames(df_2) <- colnames(df_2) %>%
+	  tolower() %>%
+	  gsub(" ", "_", .)
+
+# select columns to keep, do some renaming, etc.
+df_3 <- df_2 %>%
+  filter(!(is.na(year))) %>%
+  select(month, year, supt=supply, demt=demand, rmrevt=revenue) %>%
+  mutate(date = paste(year, month, "01", sep="-")) %>%
+  # parse date
+  # B is the full month name
+  mutate(date = as.Date(parse_date_time(date, "%Y%B%d"))) %>%
+  select(-month, -year)
+}
+
+clean_up_2 <- function(df) {
+  df_2 <- df %>%
+  # drop columns that are all NA
+  .[, colSums(is.na(.)) != nrow(.)] 
+
+# initial clean up of column names
+colnames(df_2) <- colnames(df_2) %>%
+	  tolower() %>%
+	  gsub(" ", "_", .)
+
+# select columns to keep, do some renaming, etc.
+df_3 <- df_2 %>%
+  filter(!(is.na(year))) 
+}
+
+```
+
+Define function to perform some calculations that deal with potential rounding issues in the segmentation data. 
+```{r}
+
+# this takes a data frame with segment data and recalcultes the segment data assuming the totals are correct. 
+# In other words, using the initial segmentation data for occ and adr, but then getting to calculations of segment
+# demand and rmrevt that sum to the total.
+
+recalc_seg_1 <- function(df) {
+  df %>%
+  # calculate segmentation percentages as a way to deal with potential rounding issues using rounded occupancy rates
+  mutate(sum_of_occ = transient_occ + group_occ + contract_occ) %>%
+  mutate(transient_mix = transient_occ/sum_of_occ) %>%
+  mutate(group_mix = group_occ/sum_of_occ) %>%
+  mutate(contract_mix = contract_occ/sum_of_occ) %>%
+  mutate(transient_demt = transient_mix*total_demt) %>%
+  mutate(group_demt = group_mix*total_demt) %>%
+  mutate(contract_demt = contract_mix*total_demt) %>%
+  # calculate revenue mix as a way to deal with potential rounding issues
+  mutate(transient_rmrevt = transient_demt*transient_adr,
+         group_rmrevt = group_demt*group_adr,
+         contract_rmrevt = contract_demt*contract_adr,
+         sum_of_rmrevt = transient_rmrevt + group_rmrevt + contract_rmrevt) %>%
+  mutate(transient_rmrevt_mix = transient_rmrevt/sum_of_rmrevt,
+         group_rmrevt_mix = group_rmrevt/sum_of_rmrevt,
+         contract_rmrevt_mix = contract_rmrevt/sum_of_rmrevt) %>%
+  # calculate total room revenue 
+  mutate(total_rmrevt = total_adr*total_demt) %>%
+  # recalculate segment rmrevt
+  mutate(transient_rmrevt = transient_rmrevt_mix*total_rmrevt,
+         group_rmrevt = group_rmrevt_mix*total_rmrevt,
+         contract_rmrevt = contract_rmrevt_mix*total_rmrevt) %>%
+  # recalculate ADR
+  mutate(transient_adr = transient_rmrevt/transient_demt,
+         group_adr = group_rmrevt/group_demt,
+         contract_adr = contract_rmrevt/contract_demt) 
+ 
+}
+
+
+```
+
+
+This ended up being a couple parts. The overall trend data is clean monthly for the two geographies and the two zones, so that is loaded first. But then the segmentation data has a mix of Dec. YTD and monthly data. So it's loaded in a couple parts separately.
+
+```{r}
+
+
+########
+#
+# load STR data for County
+#
+
+temp1 <- read_excel(fname1, sheet=c("Trend San Francisco County "), skip=3, col_names=TRUE)
+
+geo1 <- temp1 %>%
+  clean_up_1() %>%
+  mutate(geo = "sfcity") %>%
+  select(date, geo, everything()) 
+
+########
+#
+# load STR data for Zone 1
+#
+
+temp1 <- read_excel(fname1, sheet=c("Trend Zone 1"), skip=3, col_names=TRUE)
+
+geo2 <- temp1 %>%
+  clean_up_1() %>%
+  mutate(geo = "sfzoneone") %>%
+  select(date, geo, everything()) 
+
+########
+#
+# load STR data for Zone 2 
+#
+
+temp1 <- read_excel(fname1, sheet=c("Trend Zone 2"), skip=3, col_names=TRUE)
+
+geo3 <- temp1 %>%
+  clean_up_1() %>%
+  mutate(geo = "sfzonetwo") %>%
+  select(date, geo, everything()) 
+
+
+########
+# combine 
+
+sf_trend <- rbind(geo1, geo2, geo3)
+
+#####
+#
+# spread into columns
+
+sf_trend_2 <- sf_trend %>%
+  gather(var, value, -date, -geo) %>%
+  unite(geovar, geo, var, sep="_", remove=TRUE) %>%
+  spread(geovar, value)
+
+
+```
+
+I wasn't sure what to rely on in the segmentation data. I did a calc in excel and the rooms of the segments didn't add up to total rooms sold.Maybe due to rounding issues of some type. The Excel workbook is calculating segment demand from occupancy anyway, so I might as well do it myself.  
+I decided to take total rooms_sold as given, rooms_available as given, and the segment occupancies as accurate, and segment ADRs as accurate, and go from there. 
+```{r}
+
+########
+#
+# load segmentation data for county
+#
+
+temp1 <- read_excel(fname1, sheet=c("SF County Seg "), skip=3, col_names=TRUE)
+
+
+seg1 <- temp1 %>%
+  clean_up_2() %>%
+  mutate(geo = "sfcity") %>%
+  rename(total_occ = total_occ._) %>%
+  select(month, year, calendar_unit, geo, transient_adr, group_adr, contract_adr, 
+         total_adr, total_supt=rooms_available, total_demt=rooms_sold,     
+         transient_occ, group_occ, contract_occ, total_occ) %>%
+  recalc_seg_1() %>%
+  mutate(date = paste(year, month, "01", sep="-")) %>%
+  # parse date
+  # B is the full month name
+  mutate(date = as.Date(parse_date_time(date, "%Y%B%d"))) %>%
+    select(date, month, year, calendar_unit, geo, total_supt, total_demt, total_rmrevt, 
+         transient_rmrevt, group_rmrevt, contract_rmrevt, transient_demt, 
+         group_demt, contract_demt) 
+
+# filter to deal with the specific availabilty of data 
+# end result is going to be a dataframe with annual data for early years and monthly data for recent years.
+
+seg1_m <- seg1 %>%
+  filter(calendar_unit == "Month") %>%
+  # need to manually look to see when monthly data start
+  # make sure to start on a january
+  filter(date >= as.Date("2013-01-01")) %>%
+
+  
+  select(-calendar_unit, -month, -year) 
+
+seg1_a_part <- seg1 %>%
+  filter(calendar_unit == "YTD") %>%
+  # just as a check
+  filter(month == "December") %>%
+  # recreate date to be start of year
+  mutate(date = as.Date(paste0(year, "-01-01"))) %>%
+  select(-calendar_unit, -month, -year) 
+
+# convert the monthly data to annual data
+seg1_a_part2 <- seg1_m %>%
+  mutate(year = year(date)) %>%
+  mutate(count = 1) %>%
+  group_by(year, geo) %>%
+  summarize_each(funs(sum), -date) %>%
+  # make sure we only have full years
+  filter(count == 12) %>%
+  mutate(date = as.Date(paste0(year, "-01-01"))) %>%
+  ungroup() %>%
+  select(-year, -count)
+
+# bind the annual data frames together
+seg1_a <- bind_rows(seg1_a_part, seg1_a_part2)
+
+
+```
+
+
+Save outputs
+```{r}
+
+raw_str_sftrend <- sf_trend_2
+
+# saves Rdata version of the data
+save(raw_str_sftrend, file=paste0(fpath,"output_data/raw_str_sftrend.Rdata"))
+
+
+```
+

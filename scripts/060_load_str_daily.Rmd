@@ -1,0 +1,139 @@
+---
+title: "Load daily data"
+author: "Tourism Economics"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+
+library(arlodr)
+library(dplyr)
+library(knitr)
+library(readr)
+library(readxl)
+library(tidyr)
+library(xts, warn.conflicts=FALSE)
+library(purrr)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+fpath <- c("~/Project/R projects/sf_2016/") 
+
+
+```
+
+Read in data
+```{r}
+
+# City/county data
+fname <- paste0(fpath, "input_data/sf_daily/email 2016-05-23/SF City and County- Set Analysis (Jan 2011 - Present).xlsx")
+input_dailysf_1 <- readxl::read_excel(fname, sheet=1, col_names = TRUE, skip = 5)
+
+# convention center set
+fname <- paste0(fpath, "input_data/sf_daily/email 2016-05-23/Convention Center Set Analysis (Jan 2012 - Present).xlsx")
+input_dailyconv_1 <- readxl::read_excel(fname, sheet=1, col_names = TRUE, skip = 5)
+
+# surrounding area
+fname <- paste0(fpath, "input_data/surrounding_daily/email 2016-04-22/770778_OaklandBerkeley.xls")
+input_dailyconv_1 <- readxl::read_excel(fname, sheet=1, col_names = TRUE, skip = 5)
+
+
+
+```
+
+Clean up the City County data
+```{r}
+input_dailysf_2 <- input_dailysf_1 %>%
+  # drop columns that are all NA
+  .[, colSums(is.na(.)) != nrow(.)] 
+
+# check column names equal expected length
+a <- length(colnames(input_dailysf_2))
+stopifnot(a == 31)
+
+# select only the columns we need
+input_dailysf_2 <- input_dailysf_2[,5:17] 
+
+# initial clean up of column names
+colnames(input_dailysf_2) <- colnames(input_dailysf_2) %>%
+	  tolower() %>%
+	  gsub(" ", "_", .)
+
+# append the segment to certain columns and rename the columns
+temp <- c("",rep("occ",4), rep("adr", 4), rep("revpar", 4))
+temp_colnames <- paste(colnames(input_dailysf_2), temp, sep="_")
+# fix date column
+temp_colnames[1] <- "date"
+colnames(input_dailysf_2) <- temp_colnames
+
+# format date column
+input_dailysf_2 <- input_dailysf_2 %>%
+  mutate(date = as.Date(date))
+
+
+input_dailysf_3 <- input_dailysf_2 %>%
+  gather(variable, value, -date) %>%
+  separate(variable, c("seg", "var"), sep = "_") %>%
+  spread(var, value) %>%
+  mutate(occ = occ/100) %>%
+  mutate(geo_ttl = "sfcity") %>%
+  select(geo_ttl, date, seg, everything())
+
+```
+
+
+Clean up the convention center cet data
+```{r}
+input_dailyconv_2 <- input_dailyconv_1 %>%
+  # drop columns that are all NA
+  .[, colSums(is.na(.)) != nrow(.)] 
+
+# check column names equal expected length
+a <- length(colnames(input_dailyconv_2))
+stopifnot(a == 30)
+
+# select only the columns we need
+input_dailyconv_2 <- input_dailyconv_2[,6:18] 
+
+# initial clean up of column names
+colnames(input_dailyconv_2) <- colnames(input_dailyconv_2) %>%
+	  tolower() %>%
+	  gsub(" ", "_", .)
+
+# format date column
+input_dailyconv_2 <- input_dailyconv_2 %>%
+  mutate(date = as.Date(date))
+
+
+input_dailyconv_3 <- input_dailyconv_2 %>%
+  gather(variable, value, -date) %>%
+  separate(variable, c("seg", "var"), sep = "_") %>%
+  spread(var, value) %>%
+  mutate(occ = occ/100) %>%
+  mutate(geo_ttl = "sfconv") %>%
+  select(geo_ttl, date, seg, everything())
+
+```
+
+Combine
+```{r}
+
+str_daily <- bind_rows(input_dailysf_3, input_dailyconv_3)
+
+```
+
+Save output
+```{r}
+
+save(str_daily, file=paste0(fpath,"output_data/str_daily.Rdata"))
+
+write.csv(str_daily, file=paste0(fpath,"output_data/str_daily.csv"), row.names=FALSE)
+
+```
+

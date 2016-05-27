@@ -1,0 +1,215 @@
+---
+title: "Prep monthly str"
+author: "Tourism Economics"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(arlodr)
+library(xts, warn.conflicts=FALSE)
+library(dplyr, warn.conflicts=FALSE)
+library(tidyr, warn.conflicts=FALSE)
+library(knitr)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+fpath <- c("~/Project/R projects/sf_2016/") 
+
+```
+
+Set start data of annual data, so that it can filter to drop any partial year before that date when creating annual data.
+```{r}
+start_annual <- as.Date("2007-01-01")
+```
+
+
+```{r}
+
+load(file=paste0(fpath, "output_data/raw_str_sftrend.Rdata"))
+# runs the load_str function
+#debug(load_str)
+temp_str_sftrend <- load_str(load_m=raw_str_sftrend, units="ones")
+
+# these two data frames are the working data frames and become the outputs
+str_sftrend_m <- temp_str_sftrend[[1]]
+str_sftrend_q <- temp_str_sftrend[[2]]
+
+# loads seasonal factors
+#load("output_data/str_us_m_factors.Rdata")
+#load("output_data/str_us_q_factors.Rdata")
+
+# create monthly sa from seasonal factors using a function
+#str_us_m1 <- merge(str_us_m, str_us_m_factors, all=TRUE)
+#out_str_us_m <- create_sa_str_m(str_us_m1)
+
+# create quarterly sa from seasonal factors using a function
+#str_us_q1 <- merge(str_us_q, str_us_q_factors, all=TRUE)
+#out_str_us_q <- create_sa_str_q(str_us_q1)
+
+
+#####################
+#
+# adds str_days to the monthly and quarterly objects
+
+# add a str_days series with the number of days in each month and quarter
+# there are already series such as totus_days, but they don't go into 
+# the future
+b_m <- as.data.frame(str_sftrend_m$date )
+colnames(b_m) <- c("date")
+b_m <- b_m %>% 
+ transform(sfcity_strdays = sapply(date, arlodr::days_in_month,leap_impact=0)) %>%
+ read.zoo(drop=FALSE) 
+
+# for quarterly, we need to to extend to the end of the quarterly series
+# so summing the monthly dataframe doesn't work. But then the days_in_month
+# function isn't giving a quarterly answer just days in the first month
+# of the quarter. So solution was to create a monthly series that extended
+# the full length, and then sum that.
+
+# creates newm as a monthly zoo object with number of days for ful
+# length of quarterly
+temp <- read.zoo(str_sftrend_q)
+starta <- start(temp)
+enda <- end(temp)
+rm(temp)
+newm <- zoo(1,seq(starta,enda,by="month"))
+newma <- index(newm)
+newm_df<- as.data.frame(newm)
+newm_df$date <- rownames(newm_df)
+newm_df <- newm_df %>%
+   transform(sfcity_strdays = sapply(date, arlodr::days_in_month,leap_impact=0)) %>%
+   select(-newm)
+newm <- read.zoo(newm_df, drop=FALSE) 
+#sums zoo object to quarterly
+start <- as.yearqtr((start(newm)))
+b_q <- zooreg(vapply(newm, m_to_q, FUN.VALUE = 
+                       numeric(ceiling(nrow(newm)/3)), 
+                     type="sum"), start=start, frequency=4)
+
+b_m <- as.data.frame(b_m)
+b_m <- cbind(date = rownames(b_m), b_m)
+b_m$date <- as.Date(b_m$date)
+
+b_q <- data.frame(date=time(b_q), b_q) 
+b_q$date <- as.Date(b_q$date)
+row.names(b_q) <- NULL
+
+str_sftrend_m <- merge(str_sftrend_m, b_m)
+str_sftrend_q <- merge(str_sftrend_q, b_q)
+
+
+
+
+```
+
+
+```{r}
+str_sftrend_m %>%
+  tail(20) %>%
+  kable(digits=c(0,rep(2,4),rep(0,5)), format.args = list(big.mark = ","))
+
+```
+
+```{r}
+################
+#
+# creates xts files
+# 
+
+# out_str_sftrend_m <- out_str_sftrend_m %>%
+#   read.zoo() %>%
+#   xts()
+# sftrend_q_xts <- out_str_sftrend_q %>%
+#   read.zoo() %>%
+#   xts()
+  
+
+```
+
+
+Create annual databank. I borrows this from the create_ushist script in lodfor. Works well enough but requires a manual setting of the start date for annual data. Set at the beginning of this file.
+```{r create_a}
+
+
+# start with those that should be summed
+
+# select series that should be converted to annual by summing
+# I wrote a regular expression that is looking for certain text strings
+# for reference on writing regular expressions, see
+# http://www.regular-expressions.info/quickstart.html
+suma <- data.frame(str_sftrend_q) %>%
+  select(date, matches("_demt|_supt|_rmrevt")) %>%
+  # had to do manually so the q_to_a_xts step would work ok
+  filter(date >= start_annual) %>%
+  read.zoo() %>%
+  xts()
+
+# this function is one I defined, it converts all the columns in 
+# an xts object to annual. Must be an xts object to start with
+# also apparently has to start at the beginning of a year, so I've dropped partial year
+# data manually in the step above
+suma <- q_to_a_xts(suma, type="sum")
+
+# takes the summed data and spreads it into a tidy format with
+# tidyr and then calculates the occupancy and revpar series
+# first needs to go from xts to dataframe
+tb2 <- data.frame(date=time(suma), suma)%>% 
+  # creates column called segvar that contains the column names, and one next to 
+  # it with the values, dropping the time column
+  gather(segvar, value, -date, na.rm = FALSE) %>%
+  # in the following the ^ means anything not in the list
+  # with the list being all characters and numbers
+  # so it separates segvar into two colums using sep
+  separate(segvar, c("seg", "variable"), sep = "[^[:alnum:]]+") %>%
+  # keeps seg as a column and spreads variable into multiple columns containing
+  # containint the values
+  spread(variable,value) %>%
+  # adds new calculated column
+  mutate(occ = demt / supt) %>%
+  # adds another column
+  mutate(revpar = rmrevt / supt) %>%
+  mutate(adr = rmrevt / demt)
+
+# takes it from a tidy format and melts it, and then creates the unique
+# variable names and then reads into a zoo object spliting on the 
+# second column
+#a <- reshape2::melt(tb2, id=c("date","seg"), na.rm=FALSE)
+a <- tb2 %>%
+  gather(variable, value, -date, -seg)
+a$variable <- paste(a$seg, "_", a$var, sep='')
+a$seg <- NULL
+str_sftrend_a <- xts(read.zoo(a, split = 2))
+
+# looking at a few graphs
+autoplot.zoo(str_sftrend_a$sfcity_revpar)
+autoplot.zoo(str_sftrend_a$sfcity_supt)
+
+```
+
+
+Save outputs
+```{r}
+
+str_sftrend_a <- str_sftrend_a %>%
+  data.frame(date=time(.), .)
+
+# saves Rdata versions of the output files
+save(str_sftrend_m, file=paste0(fpath, "output_data/str_sftrend_m.Rdata"))
+save(str_sftrend_q, file=paste0(fpath, "output_data/str_sftrend_q.Rdata"))
+save(str_sftrend_a, file=paste0(fpath, "output_data/str_sftrend_a.Rdata"))
+
+
+# writes csv versions of the output files
+write.csv(str_sftrend_m, file=paste0(fpath, "output_data/str_sftrend_m.csv"), row.names=FALSE)
+write.csv(str_sftrend_q, file=paste0(fpath, "output_data/str_sftrend_q.csv"), row.names=FALSE)
+write.csv(str_sftrend_a, file=paste0(fpath, "output_data/str_sftrend_a.csv"), row.names=FALSE)
+
+
+
+
+```
+

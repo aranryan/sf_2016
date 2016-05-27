@@ -26,8 +26,8 @@ library(directlabels)
 
 ```{r}
 
-load("output_data/facility_info.Rdata")
-
+fpath <- c("~/Project/R projects/sf_2016/")
+load(paste0(fpath,"output_data/facility_info.Rdata"))
 
 gkey <- c("AIzaSyBOybTC9pXmOwVo0itauCJ_PnLziPekN3E")
 ```
@@ -70,11 +70,12 @@ style_string_2 <- c("feature:road.highway|element:geometry.fill|visibility:on|co
 style_string_3 <- c("feature:road.highway|element:geometry.fill|visibility:on|color:0x808080|weight:0.1&style=feature:road.highway|element:geometry.stroke|visibility:on|color:0x808080&style=feature:road.highway|element:labels.icon|visibility:off&style=feature:poi.park|visibility:off&style=feature:landscape.man_made|element:geometry.fill|visibility:on|weight:0.1|color:0xa5a5a5|lightness:50")
 style_string_4 <- c("feature:road.highway|element:geometry.fill|visibility:on|color:0x808080|weight:0.1&style=feature:road.highway|element:geometry.stroke|visibility:on|color:0x808080&style=feature:road.highway|element:labels.icon|visibility:off&style=feature:poi.park|visibility:off&style=feature:landscape.man_made|element:geometry.fill|visibility:on|weight:0.1|color:0xa5a5a5|lightness:50&style=feature:administrative.province|element:geometry|visibility:on|color:0x808080|weight:2.7")
 
-style_string_background <- c("feature:road.highway.controlled_access|element:geometry.stroke|visibility:on|color:0x808080&style=element:labels|visibility:off&style=feature:road.highway|element:geometry|visibility:on|color:0x808080&style=feature:road.arterial|element:geometry.fill|color:0x808080|visibility:on&style=feature:poi.park|visibility:off&style=feature:landscape.man_made|visibility:on|color:0x808080|lightness:49&style=feature:administrative.province|element:geometry|visibility:on|color:0x808080|weight:2.8")
+style_string_background_alt <- c("feature:road.highway.controlled_access|element:geometry.stroke|visibility:on|color:0x808080&style=element:labels|visibility:off&style=feature:road.highway|element:geometry|visibility:on|color:0x808080&style=feature:road.arterial|element:geometry.fill|color:0x808080|visibility:on&style=feature:poi.park|visibility:off&style=feature:landscape.man_made|visibility:on|color:0x808080|lightness:49&style=feature:administrative.province|element:geometry|visibility:on|color:0x808080|weight:2.8")
+
+
+style_string_background <- c("feature:landscape|saturation:-100|lightness:62|visibility:on&style=feature:poi|saturation:-100|lightness:49|visibility:simplified&style=feature:road.highway|saturation:-100|visibility:simplified&style=feature:road.arterial|saturation:-100|lightness:33|visibility:on&style=feature:road.local|saturation:-100|lightness:43|visibility:on&style=feature:transit|visibility:simplified|saturation:-100&style=feature:administrative.province|lightness:-22|saturation:-100|visibility:off&style=feature:water|element:geometry|lightness:-25|saturation:-94|color:0xA6A6A6&style=element:labels|visibility:off")
 
 style_string_adminlabels <- c("feature:water|visibility:off&style=feature:poi|visibility:off&style=feature:road|visibility:off&style=feature:transit|visibility:off&style=feature:administrative|element:geometry|visibility:off&style=feature:landscape|element:geometry|visibility:off")
-
-http://maps.googleapis.com/maps/api/staticmap?center=40.045489,-115.657539&zoom=6&format=png&sensor=false&size=640x480&maptype=roadmap&style=feature:water|visibility:off&style=feature:poi|visibility:off&style=feature:road|visibility:off&style=feature:transit|visibility:off&style=feature:administrative|element:geometry|visibility:off&style=feature:landscape|element:geometry|visibility:off
 
 ```
 
@@ -94,18 +95,36 @@ temp <- prop_data2
 
 # instead used this approach of specifying a center
 cent <- c(-122.383575, 37.678386)
-map_background <- get_map(location=cent, zoom = 9, map="toner-background")
-map_lines <- get_stamenmap(location=cent, size=c(640,640), zoom = 9, map="toner-lines")
-map_labels <- get_stamenmap(location=cent, size=c(640,640), zoom = 9, map="toner-labels")
+
+
+
+map_background <- get_googlemap(center=cent, size = c(640,640), scale = 2, zoom = 9, style=style_string_background, maptype="roadmap")
+
+#map_background <- get_map(location=cent, zoom = 9, map="toner-background")
+#map_lines <- get_stamenmap(location=cent, size=c(640,640), zoom = 9, map="toner-lines")
+bbZ10 <- attr(map_background, "bb")
+map_labels <- get_stamenmap(bb2bbox(bbZ10), map="toner-labels")
 
 ggmap(map_background) +
   geom_point(data = temp,
              aes(x = lon, y = lat, size = 1),
              color = "blue", alpha = 0.8) + 
   scale_size_identity(guide = "none") + 
-  inset_ggmap(map_lines) + 
-  inset_ggmap(map_labels)
+  inset_ggmap(map_labels) +
+  coord_map(xlim=c(-122.9, -121.6), ylim=c(37.1, 38.2))
 
+attr(map_background, "bb")$ll.lon
+
+coord_map(projection="mercator", 
++               xlim=c(attr(houston.map, "bb")$ll.lon, attr(houston.map, "bb")$ur.lon),
++               ylim=c(attr(houston.map, "bb")$ll.lat, attr(houston.map, "bb")$ur.lat)) 
+
+
+bbZ10
+  
+  
+  ggmap(map_background) +
+  coord_map(xlim=c(-123.1, -122), ylim=c(37.1, 38.2))
 
 
 map_background <- get_googlemap(center=cent, size=c(640,640), scale = 2, zoom = 9, style=style_string_background, maptype="roadmap", key=gkey)
