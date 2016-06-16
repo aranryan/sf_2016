@@ -41,7 +41,7 @@ input_dailyconv_1 <- readxl::read_excel(fname, sheet=1, col_names = TRUE, skip =
 
 # surrounding area
 fname <- paste0(fpath, "input_data/surrounding_daily/email 2016-04-22/770778_OaklandBerkeley.xls")
-input_dailyconv_1 <- readxl::read_excel(fname, sheet=1, col_names = TRUE, skip = 5)
+input_dailyoak_1 <- readxl::read_excel(fname, sheet=2, col_names = TRUE, skip = 4)
 
 
 
@@ -82,6 +82,10 @@ input_dailysf_3 <- input_dailysf_2 %>%
   separate(variable, c("seg", "var"), sep = "_") %>%
   spread(var, value) %>%
   mutate(occ = occ/100) %>%
+    # these are just blank
+  mutate(demd = NA,
+         supd = NA,
+         rmrev = NA) %>%
   mutate(geo_ttl = "sfcity") %>%
   select(geo_ttl, date, seg, everything())
 
@@ -116,15 +120,79 @@ input_dailyconv_3 <- input_dailyconv_2 %>%
   separate(variable, c("seg", "var"), sep = "_") %>%
   spread(var, value) %>%
   mutate(occ = occ/100) %>%
+  # these are just blank
+  mutate(demd = NA,
+         supd = NA,
+         rmrev = NA) %>%
   mutate(geo_ttl = "sfconv") %>%
   select(geo_ttl, date, seg, everything())
 
 ```
 
+Clean up the oakland data
+```{r}
+
+input_dailyoak_2 <- input_dailyoak_1 %>%
+  # drop columns that are all NA
+  .[, colSums(is.na(.)) != nrow(.)] 
+
+# check column names equal expected length
+a <- length(colnames(input_dailyoak_2))
+stopifnot(a == 21)
+
+# delete the second row
+input_dailyoak_2 <- input_dailyoak_2[-c(1), ]
+
+# initial clean up of column names
+colnames(input_dailyoak_2) <- colnames(input_dailyoak_2) %>%
+	  tolower() %>%
+	  gsub(" ", "_", .)
+
+# name certain columns based on position, which is maybe not a 
+# great, stable idea.
+names(input_dailyoak_2)[8] <- "x8"
+names(input_dailyoak_2)[10] <- "x10"
+names(input_dailyoak_2)[12] <- "x12"
+names(input_dailyoak_2)[14] <- "x14"
+names(input_dailyoak_2)[16] <- "x16"
+names(input_dailyoak_2)[18] <- "x18"
+names(input_dailyoak_2)[19] <- "censprops"
+names(input_dailyoak_2)[20] <- "censrooms"
+names(input_dailyoak_2)[21] <- "censparticip"
+
+
+
+# select columns we want to keep
+input_dailyoak_3 <- input_dailyoak_2 %>%
+  # drop any rows that are NA in date column
+  filter(!is.na(date))	%>%
+  select(date, supd=supply, demd=demand, rmrev=revenue, censprops, censrooms, censparticip) %>%
+  mutate(supd = as.numeric(supd),
+         demd = as.numeric(demd),
+         rmrev = as.numeric(rmrev)) %>%
+  mutate(occ = demd/supd) %>%
+  mutate(adr = rmrev/demd) %>%
+  mutate(revpar = rmrev/supd) %>%
+  # format date column
+  mutate(date = as.Date(date))
+
+# insert geo_ttl
+input_dailyoak_4 <- input_dailyoak_3 %>%
+  mutate(geo_ttl = "oak") %>%
+  mutate(seg = "total") %>%
+  select(geo_ttl, date, everything())
+
+# select a few series to drop
+input_dailyoak_5 <- input_dailyoak_4 %>%
+  select(-censprops, -censrooms, -censparticip)
+
+```
+
+
 Combine
 ```{r}
 
-str_daily <- bind_rows(input_dailysf_3, input_dailyconv_3)
+str_daily <- bind_rows(input_dailysf_3, input_dailyconv_3, input_dailyoak_5)
 
 ```
 

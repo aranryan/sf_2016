@@ -24,7 +24,7 @@ fname1 <- paste0(fpath, "input_data/sf_trend/STR Trend Database 2005-present_201
 
 ```
 
-Define twp temporary clean up functions
+Define two temporary clean up functions
 ```{r}
 
 clean_up_1 <- function(df) {
@@ -106,6 +106,28 @@ recalc_seg_1 <- function(df) {
 
 ```
 
+Define function to calculate ADR, occ, and revpar based on clean segmentation data.
+```{r}
+
+recalc_seg_det <- function(df) {
+df %>%
+  mutate(transient_occ = transient_demt / total_demt,
+         group_occ     = group_demt     / total_demt,
+         contract_occ  = contract_demt  / total_demt,
+         total_occ     = total_demt     / total_supt) %>%
+  mutate(transient_adr = transient_rmrevt / transient_demt,
+         group_adr     = group_rmrevt     / group_demt,
+         contract_adr  = contract_rmrevt  / contract_demt,
+         total_adr     = total_rmrevt     / total_demt) %>%
+  mutate(transient_revpar = transient_rmrevt / total_supt,
+         group_revpar     = group_rmrevt     / total_supt,
+         contract_revpar  = contract_rmrevt  / total_supt,
+         total_revpar     = total_rmrevt     / total_supt)
+}
+
+```
+
+
 
 This ended up being a couple parts. The overall trend data is clean monthly for the two geographies and the two zones, so that is loaded first. But then the segmentation data has a mix of Dec. YTD and monthly data. So it's loaded in a couple parts separately.
 
@@ -168,6 +190,7 @@ sf_trend_2 <- sf_trend %>%
 
 I wasn't sure what to rely on in the segmentation data. I did a calc in excel and the rooms of the segments didn't add up to total rooms sold.Maybe due to rounding issues of some type. The Excel workbook is calculating segment demand from occupancy anyway, so I might as well do it myself.  
 I decided to take total rooms_sold as given, rooms_available as given, and the segment occupancies as accurate, and segment ADRs as accurate, and go from there. 
+If I wanted, I could put the Zone 1 data through the same process
 ```{r}
 
 ########
@@ -202,8 +225,6 @@ seg1_m <- seg1 %>%
   # need to manually look to see when monthly data start
   # make sure to start on a january
   filter(date >= as.Date("2013-01-01")) %>%
-
-  
   select(-calendar_unit, -month, -year) 
 
 seg1_a_part <- seg1 %>%
@@ -229,6 +250,16 @@ seg1_a_part2 <- seg1_m %>%
 # bind the annual data frames together
 seg1_a <- bind_rows(seg1_a_part, seg1_a_part2)
 
+###
+#
+# add calculation of occ, ADR, revpar to each
+
+seg1_m_2 <- seg1_m %>%
+  recalc_seg_det()
+
+seg1_a_2 <- seg1_a %>%
+  recalc_seg_det()
+
 
 ```
 
@@ -236,11 +267,29 @@ seg1_a <- bind_rows(seg1_a_part, seg1_a_part2)
 Save outputs
 ```{r}
 
+# monthly trend data, to then go through prep_str
 raw_str_sftrend <- sf_trend_2
+
+# segmentation data, to use as is
+str_seg_m <- seg1_m_2
+str_seg_a <- seg1_a_2
 
 # saves Rdata version of the data
 save(raw_str_sftrend, file=paste0(fpath,"output_data/raw_str_sftrend.Rdata"))
 
+# for the csv, we want to get the geo into the columns
+str_seg_m <- str_seg_m %>%
+  gather(var, value, -date, -geo) %>%
+  unite(geovar, geo, var, sep="_", remove=TRUE) %>%
+  spread(geovar, value) 
 
+str_seg_a <- str_seg_a %>%
+  gather(var, value, -date, -geo) %>%
+  unite(geovar, geo, var, sep="_", remove=TRUE) %>%
+  spread(geovar, value) 
+
+# writes csv versions of the output files
+write.csv(str_seg_m, file=paste0(fpath, "output_data/str_seg_m.csv"), row.names=FALSE)
+write.csv(str_seg_a, file=paste0(fpath, "output_data/str_seg_a.csv"), row.names=FALSE)
 ```
 
