@@ -5,7 +5,6 @@ April 14, 2016
 
 
 
-
 ```r
 fpath <- c("~/Project/R projects/sf_2016/") 
 ```
@@ -15,7 +14,9 @@ fpath <- c("~/Project/R projects/sf_2016/")
 load(file=paste0(fpath,"output_data/str_daily.Rdata"))
 ```
 
-Create a simple set of dates and days of week
+# I. Set up data  
+
+Create a simple set of dates and days of week  
 
 ```r
 date <- seq(as.Date("1970-01-01"), as.Date("2030-01-01"), by = 1)
@@ -30,13 +31,12 @@ date_df <- df %>%
   mutate(year = lubridate::year(date))
 ```
 
-Join the simple date info onto the STR data
+Join the simple date info onto the STR data  
 
 ```r
 str_daily_1 <- str_daily %>%
   left_join(date_df, by="date")  
 ```
-
 
 Create seasonal categories
 
@@ -63,7 +63,6 @@ str_daily_2 <- str_daily_1 %>%
   left_join(seascat, by=c("date"))
 ```
 
-
 How much data do we have for each geography in the total segment?
 
 ```r
@@ -87,7 +86,7 @@ str_daily_2 %>%
  2,015   365      363      365
  2,016    NA       79       44
 
-
+### Define some categories
 Define some occupancy categories
 
 ```r
@@ -99,28 +98,55 @@ sfocccat1 <- str_daily_2 %>%
   mutate(sfocccat1 = cut(occ, c(0,.7,.8,.9,.95,1))) %>%
   select(date, sfocccat1)
 
-# typical sf occupancy by season and wday
+#######
+#
+# typical occupancy by season and wday
+
+# sf
 typocc <- str_daily_2 %>%
   filter(geo_ttl == "sfcity") %>%
   filter(seg == "total") %>%
   filter(date >= as.Date("2011-01-01") & date <= as.Date("2015-12-31")) %>%
   group_by(geo_ttl, season1, wday) %>%
-  summarize(mocc1 = mean(occ)) %>%
+  summarize(sfmocc1 = mean(occ),
+            sfsdocc1 = sd(occ),
+            sfnocc1 = n()) %>%
   ungroup() %>%
   select(-geo_ttl)
 
-# work with the segment data
+# oak
+typocc_oak <- str_daily_2 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(date >= as.Date("2011-01-01") & date <= as.Date("2015-12-31")) %>%
+  group_by(geo_ttl, season1, wday) %>%
+  summarize(oakmocc1 = mean(occ),
+            oaksdocc1 = sd(occ),
+            oaknocc1 = n()) %>%
+  ungroup() %>%
+  select(-geo_ttl)
+
+########
+#
+# typical group occupancy
+
+# sf
 typocc_group <- str_daily_2 %>%
   filter(geo_ttl == "sfcity") %>%
   filter(seg == "group") %>%
   filter(date >= as.Date("2011-01-01") & date <= as.Date("2015-12-31")) %>%
   filter(!(is.na(occ))) %>%
   group_by(season1, wday) %>%
-  summarize(mgroup1 = mean(occ)) %>%
+  summarize(sfmgroup1 = mean(occ),
+            sfsdgroup1 = sd(occ)) %>%
   ungroup() %>%
-  select(season1, wday, mgroup1)
+  select(season1, wday, sfmgroup1, sfsdgroup1)
 
-# sf group 
+########
+#
+# group categories
+
+# sf 
 sfgroupcat1 <- str_daily_2 %>%
   filter(geo_ttl == "sfcity") %>%
   filter(seg == "group") %>%
@@ -135,32 +161,70 @@ Join on these various new columns
 str_daily_3 <- str_daily_2 %>%
   left_join(sfocccat1, by=c("date")) %>%
   left_join(typocc, by=c("season1", "wday")) %>%
+  left_join(typocc_oak, by=c("season1", "wday")) %>%
   left_join(typocc_group, by=c("season1", "wday")) %>%
   left_join(sfgroupcat1, by=c("date"))
 ```
 
+Using some of these new columns, calculate some additional measures to join
 
-# Data limitations
+```r
+# how does total occupancy for sf compare to its season1-wday mean, 
+# output a list of dates with the results for those days
+
+tempsf_a <- str_daily_3 %>%
+  filter(geo_ttl == "sfcity") %>%
+  filter(seg == "total") %>%
+  mutate(sfzocc1 = (occ-sfmocc1)/sfsdocc1) %>%
+  select(date, sfzocc1)
+
+# similar but for group occupancy
+tempsf_b <- str_daily_3 %>%
+  filter(geo_ttl == "sfcity") %>%
+  filter(seg == "group") %>%
+  mutate(sfzgroup1 = (occ-sfmgroup1)/sfsdgroup1) %>%
+  select(date, sfzgroup1)
+
+# similar but for oak
+tempoak_a <- str_daily_3 %>%
+  filter(geo_ttl == "sfcity") %>%
+  filter(seg == "total") %>%
+  mutate(oakzocc1 = (occ-oakmocc1)/oaksdocc1) %>%
+  select(date, oakzocc1)
+
+# join them on
+str_daily_4 <- str_daily_3 %>%
+  left_join(tempsf_a, by=c("date")) %>%
+  left_join(tempsf_b, by=c("date")) %>%
+  left_join(tempoak_a, by=c("date")) %>%
+  # calculate a few categories
+  mutate(sfzocc1_cat = cut(sfzocc1, c(-5,-2,-1,0,1,2,2.5))) %>%
+  mutate(sfzgroup1_cat = cut(sfzgroup1, c(-5,-2,-1,0,1,2,3,5)))
+```
+
+
+
+### Data limitations
 Looks like for SF City, we could do full year comparisons from 2011 to 2015. When we do comparisons with other geographies, we should do 2012 to 2015.  
 The segmentation data for SF City is missing from 1/10/14 to 9/30/14.  
 
 
 ```r
-dsfcity_seg <- str_daily_3 %>%
+dsfcity_seg <- str_daily_4 %>%
   filter(geo_ttl == "sfcity") %>%
   filter(date >= as.Date("2011-01-01") & date <= as.Date("2015-12-31"))
 
-dsfcity_1 <- str_daily_3 %>%
+dsfcity_1 <- str_daily_4 %>%
   filter(seg == "total") %>%
   filter(geo_ttl == "sfcity") %>%
   filter(date >= as.Date("2011-01-01") & date <= as.Date("2015-12-31"))
 
-doaksf_1 <- str_daily_3 %>%
+doaksf_1 <- str_daily_4 %>%
   filter(seg == "total") %>%
   filter(geo_ttl %in% c("sfcity", "oak")) %>%
   filter(date >= as.Date("2012-01-01") & date <= as.Date("2015-12-31"))
 
-doaksf_seg <- str_daily_3 %>%
+doaksf_seg <- str_daily_4 %>%
   filter(geo_ttl %in% c("sfcity", "oak")) %>%
   filter(date >= as.Date("2012-01-01") & date <= as.Date("2015-12-31"))
 
@@ -170,9 +234,7 @@ doaksf_seg_1 <- doaksf_seg %>%
   filter(!(date == as.Date("2015-07-27")))
 ```
 
-
-
-## Frequency: Occupancy categories
+# II. Frequency: Occupancy categories
 
 Frequency of occupancy categories overall
 
@@ -579,7 +641,7 @@ dsfcity_1 %>%
   select(-n) %>%
   # spread, but replace NA with 0
   spread(wday, freq, fill=0) %>%
-  kable(digits=c(0,0,0,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(0,0,0,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
@@ -680,7 +742,7 @@ dsfcity_1 %>%
   ungroup() %>%
   # spread, but replace NA with 0
   spread(wday, n, fill=0) %>%
-  kable(digits=c(0,0,0,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(0,0,0,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
@@ -774,8 +836,7 @@ season1              yeargp    sfocccat1     Sun   Mon   Tues   Wed   Thurs   Fr
 06_Nov               yr14-15   (0.9,0.95]      0     2      4     3       3     1     2
 06_Nov               yr14-15   (0.95,1]        0     1      2     2       0     0     1
 
-
-## Average occupancy by month, etc.
+# III. Average occupancy by month, etc.
 
 Average occupancy by month, wday
 
@@ -785,7 +846,7 @@ dsfcity_1 %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
   spread(wday, occ) %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
@@ -813,7 +874,7 @@ dsfcity_1 %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
   spread(wday, occ) %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
@@ -835,99 +896,99 @@ dsfcity_1 %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
   spread(wday, occ) %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
 
-season1              yeargp    sfocccat1       Sun     Mon    Tues     Wed   Thurs   Fri     Sat
--------------------  --------  -----------  ------  ------  ------  ------  ------  ----  ------
-01_Jan-Dec           yr11-12   (0,0.7]       0.515   0.538   0.572   0.588   0.577   0.6   0.603
-01_Jan-Dec           yr11-12   (0.7,0.8]     0.759   0.712   0.719   0.757   0.760   0.7   0.759
-01_Jan-Dec           yr11-12   (0.8,0.9]        NA   0.837   0.878   0.848   0.831   0.9   0.844
-01_Jan-Dec           yr11-12   (0.9,0.95]       NA   0.922   0.921   0.934   0.904    NA   0.910
-01_Jan-Dec           yr11-12   (0.95,1]         NA      NA   0.976   0.974   0.964    NA      NA
-01_Jan-Dec           yr13      (0,0.7]       0.523   0.606   0.596   0.580   0.582   0.6   0.645
-01_Jan-Dec           yr13      (0.7,0.8]     0.758   0.742   0.711   0.775   0.766   0.8   0.773
-01_Jan-Dec           yr13      (0.8,0.9]     0.867   0.859   0.875      NA      NA   0.9   0.872
-01_Jan-Dec           yr13      (0.9,0.95]       NA   0.923      NA      NA   0.931   0.9   0.920
-01_Jan-Dec           yr13      (0.95,1]         NA      NA   0.962   0.961      NA    NA      NA
-01_Jan-Dec           yr14-15   (0,0.7]       0.573   0.561   0.615   0.601   0.646   0.6   0.574
-01_Jan-Dec           yr14-15   (0.7,0.8]     0.776   0.751   0.752   0.758   0.747   0.8   0.756
-01_Jan-Dec           yr14-15   (0.8,0.9]     0.838   0.852   0.833   0.859   0.830   0.8   0.861
-01_Jan-Dec           yr14-15   (0.9,0.95]    0.920   0.915   0.942   0.918   0.918   0.9   0.921
-01_Jan-Dec           yr14-15   (0.95,1]         NA   0.956      NA      NA      NA    NA      NA
-02_Feb-Mar-Apr-May   yr11-12   (0,0.7]       0.618   0.617   0.628   0.631   0.658   0.7   0.658
-02_Feb-Mar-Apr-May   yr11-12   (0.7,0.8]     0.725   0.753   0.752   0.750   0.758   0.8   0.758
-02_Feb-Mar-Apr-May   yr11-12   (0.8,0.9]     0.860   0.825   0.857   0.844   0.843   0.8   0.844
-02_Feb-Mar-Apr-May   yr11-12   (0.9,0.95]    0.939   0.920   0.927   0.919   0.916   0.9   0.920
-02_Feb-Mar-Apr-May   yr11-12   (0.95,1]         NA   0.955   0.958   0.953      NA    NA   0.955
-02_Feb-Mar-Apr-May   yr13      (0,0.7]       0.643   0.619   0.687      NA   0.692   0.7      NA
-02_Feb-Mar-Apr-May   yr13      (0.7,0.8]     0.735   0.745   0.753   0.737   0.742   0.7   0.747
-02_Feb-Mar-Apr-May   yr13      (0.8,0.9]     0.840   0.842   0.879   0.873   0.843   0.9   0.853
-02_Feb-Mar-Apr-May   yr13      (0.9,0.95]    0.920   0.921   0.927   0.924   0.930   0.9   0.917
-02_Feb-Mar-Apr-May   yr13      (0.95,1]         NA      NA   0.954   0.962      NA    NA   0.959
-02_Feb-Mar-Apr-May   yr14-15   (0,0.7]       0.655   0.656      NA      NA      NA   0.7   0.657
-02_Feb-Mar-Apr-May   yr14-15   (0.7,0.8]     0.758   0.757   0.783   0.794   0.758   0.7   0.766
-02_Feb-Mar-Apr-May   yr14-15   (0.8,0.9]     0.854   0.858   0.856   0.866   0.863   0.8   0.840
-02_Feb-Mar-Apr-May   yr14-15   (0.9,0.95]    0.916   0.924   0.930   0.925   0.921   0.9   0.925
-02_Feb-Mar-Apr-May   yr14-15   (0.95,1]         NA   0.958   0.960   0.959   0.959    NA   0.966
-03_Jun               yr11-12   (0.7,0.8]     0.738      NA      NA   0.770   0.793   0.8      NA
-03_Jun               yr11-12   (0.8,0.9]     0.839   0.842   0.881   0.861   0.860   0.9   0.855
-03_Jun               yr11-12   (0.9,0.95]       NA   0.919   0.925   0.915   0.907   0.9   0.936
-03_Jun               yr11-12   (0.95,1]         NA      NA   0.965   0.972   0.964    NA      NA
-03_Jun               yr13      (0.7,0.8]     0.792      NA      NA      NA      NA   0.8      NA
-03_Jun               yr13      (0.8,0.9]     0.850      NA      NA   0.898   0.837    NA   0.887
-03_Jun               yr13      (0.9,0.95]       NA   0.922   0.947   0.934   0.923   0.9   0.944
-03_Jun               yr13      (0.95,1]         NA   0.975   0.971   0.971   0.966    NA   0.957
-03_Jun               yr14-15   (0.7,0.8]     0.774   0.763   0.742      NA      NA    NA      NA
-03_Jun               yr14-15   (0.8,0.9]     0.841   0.869      NA      NA   0.869   0.9      NA
-03_Jun               yr14-15   (0.9,0.95]    0.914   0.923   0.922   0.912   0.925   0.9   0.922
-03_Jun               yr14-15   (0.95,1]         NA   0.955   0.974   0.966   0.971   1.0   0.979
-04_Jul-Aug-Sep       yr11-12   (0,0.7]       0.697   0.639   0.667      NA      NA    NA      NA
-04_Jul-Aug-Sep       yr11-12   (0.7,0.8]     0.765   0.702   0.735   0.750   0.759   0.8      NA
-04_Jul-Aug-Sep       yr11-12   (0.8,0.9]     0.859   0.875   0.885   0.865   0.872   0.9   0.874
-04_Jul-Aug-Sep       yr11-12   (0.9,0.95]    0.932   0.926   0.924   0.928   0.931   0.9   0.943
-04_Jul-Aug-Sep       yr11-12   (0.95,1]      0.957   0.962   0.973   0.970   0.964   1.0   0.966
-04_Jul-Aug-Sep       yr13      (0,0.7]          NA   0.641   0.683      NA      NA    NA      NA
-04_Jul-Aug-Sep       yr13      (0.7,0.8]     0.725   0.745   0.732   0.739   0.797   0.8      NA
-04_Jul-Aug-Sep       yr13      (0.8,0.9]     0.855   0.880      NA   0.807   0.876   0.9   0.869
-04_Jul-Aug-Sep       yr13      (0.9,0.95]    0.923   0.920   0.929   0.934   0.935   0.9   0.949
-04_Jul-Aug-Sep       yr13      (0.95,1]      0.951   0.965   0.973   0.966   0.966   1.0   0.965
-04_Jul-Aug-Sep       yr14-15   (0,0.7]       0.679   0.666      NA      NA      NA    NA      NA
-04_Jul-Aug-Sep       yr14-15   (0.7,0.8]     0.771      NA   0.767   0.720   0.739    NA      NA
-04_Jul-Aug-Sep       yr14-15   (0.8,0.9]     0.854   0.852   0.880   0.893   0.865   0.9   0.867
-04_Jul-Aug-Sep       yr14-15   (0.9,0.95]    0.929   0.923   0.931   0.934   0.932   0.9   0.929
-04_Jul-Aug-Sep       yr14-15   (0.95,1]      0.952   0.962   0.972   0.968   0.968   1.0   0.971
-05_Oct               yr11-12   (0,0.7]       0.568   0.611      NA   0.643      NA    NA      NA
-05_Oct               yr11-12   (0.7,0.8]     0.745   0.762   0.795      NA      NA   0.8      NA
-05_Oct               yr11-12   (0.8,0.9]     0.846   0.848   0.823   0.855   0.832   0.8   0.834
-05_Oct               yr11-12   (0.9,0.95]    0.908   0.920   0.924   0.931   0.924   0.9   0.926
-05_Oct               yr11-12   (0.95,1]      0.951   0.963   0.974   0.969   0.967   1.0   0.973
-05_Oct               yr13      (0.7,0.8]        NA      NA      NA      NA   0.769    NA      NA
-05_Oct               yr13      (0.8,0.9]     0.860   0.856   0.895   0.835   0.886   0.8      NA
-05_Oct               yr13      (0.9,0.95]       NA   0.901   0.922   0.909   0.921   0.9   0.943
-05_Oct               yr13      (0.95,1]         NA   0.961   0.956   0.987   0.982   1.0   0.974
-05_Oct               yr14-15   (0,0.7]          NA      NA      NA      NA      NA   0.7      NA
-05_Oct               yr14-15   (0.7,0.8]     0.785      NA      NA      NA   0.730   0.8   0.797
-05_Oct               yr14-15   (0.8,0.9]     0.859   0.883   0.886   0.836   0.835   0.8   0.892
-05_Oct               yr14-15   (0.9,0.95]    0.939   0.912   0.937   0.933   0.930   0.9   0.931
-05_Oct               yr14-15   (0.95,1]         NA   0.965   0.972   0.969   0.966   1.0   0.966
-06_Nov               yr11-12   (0,0.7]       0.527   0.531   0.509   0.500   0.565   0.7   0.634
-06_Nov               yr11-12   (0.7,0.8]     0.744   0.777      NA   0.727   0.721   0.7      NA
-06_Nov               yr11-12   (0.8,0.9]     0.879   0.804   0.844   0.859   0.827   0.8   0.881
-06_Nov               yr11-12   (0.9,0.95]       NA      NA   0.936   0.941   0.942   0.9   0.933
-06_Nov               yr11-12   (0.95,1]         NA   0.964   0.963   0.962      NA    NA   0.953
-06_Nov               yr13      (0,0.7]       0.558   0.520   0.481   0.503   0.603    NA      NA
-06_Nov               yr13      (0.7,0.8]     0.765   0.774      NA      NA   0.788   0.8   0.765
-06_Nov               yr13      (0.8,0.9]     0.843   0.865   0.833   0.862   0.816   0.8   0.844
-06_Nov               yr13      (0.9,0.95]       NA      NA   0.926      NA      NA    NA      NA
-06_Nov               yr13      (0.95,1]         NA   0.954   0.977   0.978   0.975   1.0   0.976
-06_Nov               yr14-15   (0,0.7]       0.562   0.549   0.475   0.516   0.639    NA   0.670
-06_Nov               yr14-15   (0.7,0.8]     0.757      NA      NA      NA      NA   0.8   0.799
-06_Nov               yr14-15   (0.8,0.9]     0.850   0.825      NA   0.861   0.865   0.9   0.832
-06_Nov               yr14-15   (0.9,0.95]       NA   0.928   0.925   0.921   0.921   0.9   0.943
-06_Nov               yr14-15   (0.95,1]         NA   0.975   0.958   0.967      NA    NA   0.974
+season1              yeargp    sfocccat1       Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+-------------------  --------  -----------  ------  ------  ------  ------  ------  ------  ------
+01_Jan-Dec           yr11-12   (0,0.7]       0.515   0.538   0.572   0.588   0.577   0.614   0.603
+01_Jan-Dec           yr11-12   (0.7,0.8]     0.759   0.712   0.719   0.757   0.760   0.736   0.759
+01_Jan-Dec           yr11-12   (0.8,0.9]        NA   0.837   0.878   0.848   0.831   0.875   0.844
+01_Jan-Dec           yr11-12   (0.9,0.95]       NA   0.922   0.921   0.934   0.904      NA   0.910
+01_Jan-Dec           yr11-12   (0.95,1]         NA      NA   0.976   0.974   0.964      NA      NA
+01_Jan-Dec           yr13      (0,0.7]       0.523   0.606   0.596   0.580   0.582   0.598   0.645
+01_Jan-Dec           yr13      (0.7,0.8]     0.758   0.742   0.711   0.775   0.766   0.756   0.773
+01_Jan-Dec           yr13      (0.8,0.9]     0.867   0.859   0.875      NA      NA   0.861   0.872
+01_Jan-Dec           yr13      (0.9,0.95]       NA   0.923      NA      NA   0.931   0.914   0.920
+01_Jan-Dec           yr13      (0.95,1]         NA      NA   0.962   0.961      NA      NA      NA
+01_Jan-Dec           yr14-15   (0,0.7]       0.573   0.561   0.615   0.601   0.646   0.647   0.574
+01_Jan-Dec           yr14-15   (0.7,0.8]     0.776   0.751   0.752   0.758   0.747   0.761   0.756
+01_Jan-Dec           yr14-15   (0.8,0.9]     0.838   0.852   0.833   0.859   0.830   0.843   0.861
+01_Jan-Dec           yr14-15   (0.9,0.95]    0.920   0.915   0.942   0.918   0.918   0.938   0.921
+01_Jan-Dec           yr14-15   (0.95,1]         NA   0.956      NA      NA      NA      NA      NA
+02_Feb-Mar-Apr-May   yr11-12   (0,0.7]       0.618   0.617   0.628   0.631   0.658   0.663   0.658
+02_Feb-Mar-Apr-May   yr11-12   (0.7,0.8]     0.725   0.753   0.752   0.750   0.758   0.760   0.758
+02_Feb-Mar-Apr-May   yr11-12   (0.8,0.9]     0.860   0.825   0.857   0.844   0.843   0.843   0.844
+02_Feb-Mar-Apr-May   yr11-12   (0.9,0.95]    0.939   0.920   0.927   0.919   0.916   0.905   0.920
+02_Feb-Mar-Apr-May   yr11-12   (0.95,1]         NA   0.955   0.958   0.953      NA      NA   0.955
+02_Feb-Mar-Apr-May   yr13      (0,0.7]       0.643   0.619   0.687      NA   0.692   0.660      NA
+02_Feb-Mar-Apr-May   yr13      (0.7,0.8]     0.735   0.745   0.753   0.737   0.742   0.743   0.747
+02_Feb-Mar-Apr-May   yr13      (0.8,0.9]     0.840   0.842   0.879   0.873   0.843   0.864   0.853
+02_Feb-Mar-Apr-May   yr13      (0.9,0.95]    0.920   0.921   0.927   0.924   0.930   0.918   0.917
+02_Feb-Mar-Apr-May   yr13      (0.95,1]         NA      NA   0.954   0.962      NA      NA   0.959
+02_Feb-Mar-Apr-May   yr14-15   (0,0.7]       0.655   0.656      NA      NA      NA   0.672   0.657
+02_Feb-Mar-Apr-May   yr14-15   (0.7,0.8]     0.758   0.757   0.783   0.794   0.758   0.746   0.766
+02_Feb-Mar-Apr-May   yr14-15   (0.8,0.9]     0.854   0.858   0.856   0.866   0.863   0.847   0.840
+02_Feb-Mar-Apr-May   yr14-15   (0.9,0.95]    0.916   0.924   0.930   0.925   0.921   0.910   0.925
+02_Feb-Mar-Apr-May   yr14-15   (0.95,1]         NA   0.958   0.960   0.959   0.959      NA   0.966
+03_Jun               yr11-12   (0.7,0.8]     0.738      NA      NA   0.770   0.793   0.783      NA
+03_Jun               yr11-12   (0.8,0.9]     0.839   0.842   0.881   0.861   0.860   0.856   0.855
+03_Jun               yr11-12   (0.9,0.95]       NA   0.919   0.925   0.915   0.907   0.928   0.936
+03_Jun               yr11-12   (0.95,1]         NA      NA   0.965   0.972   0.964      NA      NA
+03_Jun               yr13      (0.7,0.8]     0.792      NA      NA      NA      NA   0.788      NA
+03_Jun               yr13      (0.8,0.9]     0.850      NA      NA   0.898   0.837      NA   0.887
+03_Jun               yr13      (0.9,0.95]       NA   0.922   0.947   0.934   0.923   0.925   0.944
+03_Jun               yr13      (0.95,1]         NA   0.975   0.971   0.971   0.966      NA   0.957
+03_Jun               yr14-15   (0.7,0.8]     0.774   0.763   0.742      NA      NA      NA      NA
+03_Jun               yr14-15   (0.8,0.9]     0.841   0.869      NA      NA   0.869   0.880      NA
+03_Jun               yr14-15   (0.9,0.95]    0.914   0.923   0.922   0.912   0.925   0.912   0.922
+03_Jun               yr14-15   (0.95,1]         NA   0.955   0.974   0.966   0.971   0.969   0.979
+04_Jul-Aug-Sep       yr11-12   (0,0.7]       0.697   0.639   0.667      NA      NA      NA      NA
+04_Jul-Aug-Sep       yr11-12   (0.7,0.8]     0.765   0.702   0.735   0.750   0.759   0.795      NA
+04_Jul-Aug-Sep       yr11-12   (0.8,0.9]     0.859   0.875   0.885   0.865   0.872   0.865   0.874
+04_Jul-Aug-Sep       yr11-12   (0.9,0.95]    0.932   0.926   0.924   0.928   0.931   0.928   0.943
+04_Jul-Aug-Sep       yr11-12   (0.95,1]      0.957   0.962   0.973   0.970   0.964   0.975   0.966
+04_Jul-Aug-Sep       yr13      (0,0.7]          NA   0.641   0.683      NA      NA      NA      NA
+04_Jul-Aug-Sep       yr13      (0.7,0.8]     0.725   0.745   0.732   0.739   0.797   0.784      NA
+04_Jul-Aug-Sep       yr13      (0.8,0.9]     0.855   0.880      NA   0.807   0.876   0.873   0.869
+04_Jul-Aug-Sep       yr13      (0.9,0.95]    0.923   0.920   0.929   0.934   0.935   0.934   0.949
+04_Jul-Aug-Sep       yr13      (0.95,1]      0.951   0.965   0.973   0.966   0.966   0.971   0.965
+04_Jul-Aug-Sep       yr14-15   (0,0.7]       0.679   0.666      NA      NA      NA      NA      NA
+04_Jul-Aug-Sep       yr14-15   (0.7,0.8]     0.771      NA   0.767   0.720   0.739      NA      NA
+04_Jul-Aug-Sep       yr14-15   (0.8,0.9]     0.854   0.852   0.880   0.893   0.865   0.866   0.867
+04_Jul-Aug-Sep       yr14-15   (0.9,0.95]    0.929   0.923   0.931   0.934   0.932   0.919   0.929
+04_Jul-Aug-Sep       yr14-15   (0.95,1]      0.952   0.962   0.972   0.968   0.968   0.967   0.971
+05_Oct               yr11-12   (0,0.7]       0.568   0.611      NA   0.643      NA      NA      NA
+05_Oct               yr11-12   (0.7,0.8]     0.745   0.762   0.795      NA      NA   0.775      NA
+05_Oct               yr11-12   (0.8,0.9]     0.846   0.848   0.823   0.855   0.832   0.845   0.834
+05_Oct               yr11-12   (0.9,0.95]    0.908   0.920   0.924   0.931   0.924   0.914   0.926
+05_Oct               yr11-12   (0.95,1]      0.951   0.963   0.974   0.969   0.967   0.952   0.973
+05_Oct               yr13      (0.7,0.8]        NA      NA      NA      NA   0.769      NA      NA
+05_Oct               yr13      (0.8,0.9]     0.860   0.856   0.895   0.835   0.886   0.838      NA
+05_Oct               yr13      (0.9,0.95]       NA   0.901   0.922   0.909   0.921   0.926   0.943
+05_Oct               yr13      (0.95,1]         NA   0.961   0.956   0.987   0.982   0.968   0.974
+05_Oct               yr14-15   (0,0.7]          NA      NA      NA      NA      NA   0.688      NA
+05_Oct               yr14-15   (0.7,0.8]     0.785      NA      NA      NA   0.730   0.754   0.797
+05_Oct               yr14-15   (0.8,0.9]     0.859   0.883   0.886   0.836   0.835   0.834   0.892
+05_Oct               yr14-15   (0.9,0.95]    0.939   0.912   0.937   0.933   0.930   0.917   0.931
+05_Oct               yr14-15   (0.95,1]         NA   0.965   0.972   0.969   0.966   0.959   0.966
+06_Nov               yr11-12   (0,0.7]       0.527   0.531   0.509   0.500   0.565   0.682   0.634
+06_Nov               yr11-12   (0.7,0.8]     0.744   0.777      NA   0.727   0.721   0.735      NA
+06_Nov               yr11-12   (0.8,0.9]     0.879   0.804   0.844   0.859   0.827   0.842   0.881
+06_Nov               yr11-12   (0.9,0.95]       NA      NA   0.936   0.941   0.942   0.935   0.933
+06_Nov               yr11-12   (0.95,1]         NA   0.964   0.963   0.962      NA      NA   0.953
+06_Nov               yr13      (0,0.7]       0.558   0.520   0.481   0.503   0.603      NA      NA
+06_Nov               yr13      (0.7,0.8]     0.765   0.774      NA      NA   0.788   0.751   0.765
+06_Nov               yr13      (0.8,0.9]     0.843   0.865   0.833   0.862   0.816   0.803   0.844
+06_Nov               yr13      (0.9,0.95]       NA      NA   0.926      NA      NA      NA      NA
+06_Nov               yr13      (0.95,1]         NA   0.954   0.977   0.978   0.975   0.957   0.976
+06_Nov               yr14-15   (0,0.7]       0.562   0.549   0.475   0.516   0.639      NA   0.670
+06_Nov               yr14-15   (0.7,0.8]     0.757      NA      NA      NA      NA   0.779   0.799
+06_Nov               yr14-15   (0.8,0.9]     0.850   0.825      NA   0.861   0.865   0.857   0.832
+06_Nov               yr14-15   (0.9,0.95]       NA   0.928   0.925   0.921   0.921   0.902   0.943
+06_Nov               yr14-15   (0.95,1]         NA   0.975   0.958   0.967      NA      NA   0.974
 
 ## Occ and ADR
 
@@ -940,11 +1001,13 @@ dsfcity_1 %>%
   geom_point()
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-20-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-21-1.png)<!-- -->
 
-# Surrounding areas
+# IV. Oak daily as related to SF
 
-## Initial explorations
+Remember, SF segmentation data is missing from 1/10/14 to 9/30/14.   
+
+Initial explorations  
 
 ```r
 doaksf_1 %>%
@@ -958,9 +1021,9 @@ doaksf_1 %>%
 ## Warning: Removed 2 rows containing missing values (geom_point).
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-21-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-22-1.png)<!-- -->
 
-With segment info 
+With segment info   
 
 ```r
 doaksf_seg_1 %>%
@@ -975,22 +1038,21 @@ doaksf_seg_1 %>%
 ## Warning: Removed 279 rows containing missing values (geom_point).
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-22-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-23-1.png)<!-- -->
 
-## Oak daily as related to SF
-Remember, SF segmentation data is missing from 1/10/14 to 9/30/14.  
-
-### Occupancy grouped by SF-based categories
-Take a look at what Oak occupancy looks like grouped by some of these SF-based categories.  
-
+## IV.A. Occupancy impact to Oak grouped by SF-based categories: _Initial approach_
+This initial approach is based on the simple occupancy categories for SF, rather than z-scores)  
+  
 ******
-Grouped by SF occupancy category  
+### Grouped by SF occupancy category
+Take a look at what Oak occupancy looks like grouped by some of these SF-based categories.  
 
 Overall (so what is oak occupancy, without regard to SF occupancy)
 
 ```r
 gpoak_a <- doaksf_seg_1 %>%
   filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
   group_by(season1, wday) %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
@@ -999,22 +1061,22 @@ gpoak_a <- doaksf_seg_1 %>%
   select(sfocccat1, everything())
 
 gpoak_a %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
 
-sfocccat1   season1                 Sun     Mon    Tues     Wed   Thurs     Fri   Sat
-----------  -------------------  ------  ------  ------  ------  ------  ------  ----
-allcats     01_Jan-Dec            0.572   0.681   0.733   0.738   0.693   0.626   0.7
-allcats     02_Feb-Mar-Apr-May    0.650   0.768   0.849   0.856   0.806   0.762   0.8
-allcats     03_Jun                0.751   0.871   0.928   0.937   0.896   0.852   0.9
-allcats     04_Jul-Aug-Sep        0.774   0.856   0.905   0.908   0.876   0.876   0.9
-allcats     05_Oct                0.752   0.847   0.898   0.898   0.860   0.839   0.9
-allcats     06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.7
-
+sfocccat1   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+----------  -------------------  ------  ------  ------  ------  ------  ------  ------
+allcats     01_Jan-Dec            0.572   0.681   0.733   0.738   0.693   0.626   0.656
+allcats     02_Feb-Mar-Apr-May    0.650   0.768   0.849   0.856   0.806   0.762   0.775
+allcats     03_Jun                0.751   0.871   0.928   0.937   0.896   0.852   0.872
+allcats     04_Jul-Aug-Sep        0.774   0.856   0.905   0.908   0.876   0.876   0.918
+allcats     05_Oct                0.752   0.847   0.898   0.898   0.860   0.839   0.892
+allcats     06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.728
 
 ```r
+# mean by category
 gpoak_b <- doaksf_seg_1 %>%
   filter(geo_ttl == "oak") %>%
   group_by(sfocccat1, season1, wday) %>%
@@ -1023,92 +1085,148 @@ gpoak_b <- doaksf_seg_1 %>%
   spread(wday, occ) 
 
 gpoak_b %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
 
-sfocccat1    season1                 Sun     Mon    Tues     Wed   Thurs     Fri   Sat
------------  -------------------  ------  ------  ------  ------  ------  ------  ----
-(0,0.7]      01_Jan-Dec            0.544   0.615   0.641   0.593   0.621   0.575   0.6
-(0,0.7]      02_Feb-Mar-Apr-May    0.604   0.630   0.765   0.768   0.735   0.663   0.6
-(0,0.7]      04_Jul-Aug-Sep        0.680   0.579   0.639      NA      NA      NA    NA
-(0,0.7]      05_Oct                   NA      NA      NA   0.666      NA   0.642    NA
-(0,0.7]      06_Nov                0.545   0.590   0.562   0.531   0.627      NA   0.6
-(0.7,0.8]    01_Jan-Dec            0.558   0.695   0.746   0.792   0.733   0.650   0.7
-(0.7,0.8]    02_Feb-Mar-Apr-May    0.668   0.742   0.765   0.789   0.768   0.707   0.7
-(0.7,0.8]    03_Jun                0.704   0.722   0.826      NA      NA   0.755    NA
-(0.7,0.8]    04_Jul-Aug-Sep        0.757   0.717   0.702   0.672   0.722   0.810    NA
-(0.7,0.8]    05_Oct                0.719   0.838   0.894      NA   0.713   0.627   0.7
-(0.7,0.8]    06_Nov                0.665   0.770      NA   0.749   0.749   0.676   0.7
-(0.8,0.9]    01_Jan-Dec            0.636   0.682   0.808   0.833   0.687   0.668   0.7
-(0.8,0.9]    02_Feb-Mar-Apr-May    0.740   0.796   0.836   0.840   0.809   0.787   0.7
-(0.8,0.9]    03_Jun                0.759   0.858   0.874   0.873   0.853   0.822   0.8
-(0.8,0.9]    04_Jul-Aug-Sep        0.768   0.846   0.846   0.777   0.853   0.829   0.8
-(0.8,0.9]    05_Oct                0.748   0.821   0.825   0.807   0.868   0.833   0.8
-(0.8,0.9]    06_Nov                0.724   0.823   0.863   0.886   0.832   0.724   0.7
-(0.9,0.95]   01_Jan-Dec            0.757   0.777   0.888   0.838   0.808   0.748   0.7
-(0.9,0.95]   02_Feb-Mar-Apr-May    0.759   0.850   0.883   0.875   0.850   0.844   0.9
-(0.9,0.95]   03_Jun                0.801   0.877   0.924   0.928   0.905   0.877   0.9
-(0.9,0.95]   04_Jul-Aug-Sep        0.841   0.899   0.922   0.903   0.891   0.882   0.9
-(0.9,0.95]   05_Oct                0.870   0.854   0.900   0.907   0.896   0.877   0.9
-(0.9,0.95]   06_Nov                   NA   0.850   0.905   0.921   0.850   0.787   0.9
-(0.95,1]     01_Jan-Dec               NA   0.912   0.883   0.893   0.872      NA    NA
-(0.95,1]     02_Feb-Mar-Apr-May       NA   0.936   0.929   0.916   0.906      NA   0.9
-(0.95,1]     03_Jun                   NA   0.923   0.951   0.952   0.922   0.956   0.9
-(0.95,1]     04_Jul-Aug-Sep        0.822   0.920   0.955   0.953   0.936   0.940   0.9
-(0.95,1]     05_Oct                   NA   0.901   0.937   0.941   0.903   0.906   0.9
-(0.95,1]     06_Nov                   NA   0.892   0.922   0.926   0.906   0.847   0.9
-
-Combine the tables
+sfocccat1    season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+-----------  -------------------  ------  ------  ------  ------  ------  ------  ------
+(0,0.7]      01_Jan-Dec            0.544   0.615   0.641   0.593   0.621   0.575   0.556
+(0,0.7]      02_Feb-Mar-Apr-May    0.604   0.630   0.765   0.768   0.735   0.663   0.629
+(0,0.7]      04_Jul-Aug-Sep        0.680   0.579   0.639      NA      NA      NA      NA
+(0,0.7]      05_Oct                   NA      NA      NA   0.666      NA   0.642      NA
+(0,0.7]      06_Nov                0.545   0.590   0.562   0.531   0.627      NA   0.588
+(0.7,0.8]    01_Jan-Dec            0.558   0.695   0.746   0.792   0.733   0.650   0.654
+(0.7,0.8]    02_Feb-Mar-Apr-May    0.668   0.742   0.765   0.789   0.768   0.707   0.700
+(0.7,0.8]    03_Jun                0.704   0.722   0.826      NA      NA   0.755      NA
+(0.7,0.8]    04_Jul-Aug-Sep        0.757   0.717   0.702   0.672   0.722   0.810      NA
+(0.7,0.8]    05_Oct                0.719   0.838   0.894      NA   0.713   0.627   0.699
+(0.7,0.8]    06_Nov                0.665   0.770      NA   0.749   0.749   0.676   0.662
+(0.8,0.9]    01_Jan-Dec            0.636   0.682   0.808   0.833   0.687   0.668   0.686
+(0.8,0.9]    02_Feb-Mar-Apr-May    0.740   0.796   0.836   0.840   0.809   0.787   0.747
+(0.8,0.9]    03_Jun                0.759   0.858   0.874   0.873   0.853   0.822   0.787
+(0.8,0.9]    04_Jul-Aug-Sep        0.768   0.846   0.846   0.777   0.853   0.829   0.831
+(0.8,0.9]    05_Oct                0.748   0.821   0.825   0.807   0.868   0.833   0.835
+(0.8,0.9]    06_Nov                0.724   0.823   0.863   0.886   0.832   0.724   0.713
+(0.9,0.95]   01_Jan-Dec            0.757   0.777   0.888   0.838   0.808   0.748   0.719
+(0.9,0.95]   02_Feb-Mar-Apr-May    0.759   0.850   0.883   0.875   0.850   0.844   0.861
+(0.9,0.95]   03_Jun                0.801   0.877   0.924   0.928   0.905   0.877   0.878
+(0.9,0.95]   04_Jul-Aug-Sep        0.841   0.899   0.922   0.903   0.891   0.882   0.895
+(0.9,0.95]   05_Oct                0.870   0.854   0.900   0.907   0.896   0.877   0.880
+(0.9,0.95]   06_Nov                   NA   0.850   0.905   0.921   0.850   0.787   0.850
+(0.95,1]     01_Jan-Dec               NA   0.912   0.883   0.893   0.872      NA      NA
+(0.95,1]     02_Feb-Mar-Apr-May       NA   0.936   0.929   0.916   0.906      NA   0.915
+(0.95,1]     03_Jun                   NA   0.923   0.951   0.952   0.922   0.956   0.930
+(0.95,1]     04_Jul-Aug-Sep        0.822   0.920   0.955   0.953   0.936   0.940   0.941
+(0.95,1]     05_Oct                   NA   0.901   0.937   0.941   0.903   0.906   0.928
+(0.95,1]     06_Nov                   NA   0.892   0.922   0.926   0.906   0.847   0.902
 
 ```r
-gpoak_c <- bind_rows(gpoak_a, gpoak_b)
+#  combine the tables
+gpoak_c <- bind_rows(gpoak_a, gpoak_b) %>%
+  tidyr::complete(sfocccat1, season1) %>%
+  arrange(season1) 
 
 gpoak_c %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
 
-sfocccat1    season1                 Sun     Mon    Tues     Wed   Thurs     Fri   Sat
------------  -------------------  ------  ------  ------  ------  ------  ------  ----
-allcats      01_Jan-Dec            0.572   0.681   0.733   0.738   0.693   0.626   0.7
-allcats      02_Feb-Mar-Apr-May    0.650   0.768   0.849   0.856   0.806   0.762   0.8
-allcats      03_Jun                0.751   0.871   0.928   0.937   0.896   0.852   0.9
-allcats      04_Jul-Aug-Sep        0.774   0.856   0.905   0.908   0.876   0.876   0.9
-allcats      05_Oct                0.752   0.847   0.898   0.898   0.860   0.839   0.9
-allcats      06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.7
-(0,0.7]      01_Jan-Dec            0.544   0.615   0.641   0.593   0.621   0.575   0.6
-(0,0.7]      02_Feb-Mar-Apr-May    0.604   0.630   0.765   0.768   0.735   0.663   0.6
-(0,0.7]      04_Jul-Aug-Sep        0.680   0.579   0.639      NA      NA      NA    NA
-(0,0.7]      05_Oct                   NA      NA      NA   0.666      NA   0.642    NA
-(0,0.7]      06_Nov                0.545   0.590   0.562   0.531   0.627      NA   0.6
-(0.7,0.8]    01_Jan-Dec            0.558   0.695   0.746   0.792   0.733   0.650   0.7
-(0.7,0.8]    02_Feb-Mar-Apr-May    0.668   0.742   0.765   0.789   0.768   0.707   0.7
-(0.7,0.8]    03_Jun                0.704   0.722   0.826      NA      NA   0.755    NA
-(0.7,0.8]    04_Jul-Aug-Sep        0.757   0.717   0.702   0.672   0.722   0.810    NA
-(0.7,0.8]    05_Oct                0.719   0.838   0.894      NA   0.713   0.627   0.7
-(0.7,0.8]    06_Nov                0.665   0.770      NA   0.749   0.749   0.676   0.7
-(0.8,0.9]    01_Jan-Dec            0.636   0.682   0.808   0.833   0.687   0.668   0.7
-(0.8,0.9]    02_Feb-Mar-Apr-May    0.740   0.796   0.836   0.840   0.809   0.787   0.7
-(0.8,0.9]    03_Jun                0.759   0.858   0.874   0.873   0.853   0.822   0.8
-(0.8,0.9]    04_Jul-Aug-Sep        0.768   0.846   0.846   0.777   0.853   0.829   0.8
-(0.8,0.9]    05_Oct                0.748   0.821   0.825   0.807   0.868   0.833   0.8
-(0.8,0.9]    06_Nov                0.724   0.823   0.863   0.886   0.832   0.724   0.7
-(0.9,0.95]   01_Jan-Dec            0.757   0.777   0.888   0.838   0.808   0.748   0.7
-(0.9,0.95]   02_Feb-Mar-Apr-May    0.759   0.850   0.883   0.875   0.850   0.844   0.9
-(0.9,0.95]   03_Jun                0.801   0.877   0.924   0.928   0.905   0.877   0.9
-(0.9,0.95]   04_Jul-Aug-Sep        0.841   0.899   0.922   0.903   0.891   0.882   0.9
-(0.9,0.95]   05_Oct                0.870   0.854   0.900   0.907   0.896   0.877   0.9
-(0.9,0.95]   06_Nov                   NA   0.850   0.905   0.921   0.850   0.787   0.9
-(0.95,1]     01_Jan-Dec               NA   0.912   0.883   0.893   0.872      NA    NA
-(0.95,1]     02_Feb-Mar-Apr-May       NA   0.936   0.929   0.916   0.906      NA   0.9
-(0.95,1]     03_Jun                   NA   0.923   0.951   0.952   0.922   0.956   0.9
-(0.95,1]     04_Jul-Aug-Sep        0.822   0.920   0.955   0.953   0.936   0.940   0.9
-(0.95,1]     05_Oct                   NA   0.901   0.937   0.941   0.903   0.906   0.9
-(0.95,1]     06_Nov                   NA   0.892   0.922   0.926   0.906   0.847   0.9
+sfocccat1    season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+-----------  -------------------  ------  ------  ------  ------  ------  ------  ------
+(0,0.7]      01_Jan-Dec            0.544   0.615   0.641   0.593   0.621   0.575   0.556
+(0.7,0.8]    01_Jan-Dec            0.558   0.695   0.746   0.792   0.733   0.650   0.654
+(0.8,0.9]    01_Jan-Dec            0.636   0.682   0.808   0.833   0.687   0.668   0.686
+(0.9,0.95]   01_Jan-Dec            0.757   0.777   0.888   0.838   0.808   0.748   0.719
+(0.95,1]     01_Jan-Dec               NA   0.912   0.883   0.893   0.872      NA      NA
+allcats      01_Jan-Dec            0.572   0.681   0.733   0.738   0.693   0.626   0.656
+(0,0.7]      02_Feb-Mar-Apr-May    0.604   0.630   0.765   0.768   0.735   0.663   0.629
+(0.7,0.8]    02_Feb-Mar-Apr-May    0.668   0.742   0.765   0.789   0.768   0.707   0.700
+(0.8,0.9]    02_Feb-Mar-Apr-May    0.740   0.796   0.836   0.840   0.809   0.787   0.747
+(0.9,0.95]   02_Feb-Mar-Apr-May    0.759   0.850   0.883   0.875   0.850   0.844   0.861
+(0.95,1]     02_Feb-Mar-Apr-May       NA   0.936   0.929   0.916   0.906      NA   0.915
+allcats      02_Feb-Mar-Apr-May    0.650   0.768   0.849   0.856   0.806   0.762   0.775
+(0,0.7]      03_Jun                   NA      NA      NA      NA      NA      NA      NA
+(0.7,0.8]    03_Jun                0.704   0.722   0.826      NA      NA   0.755      NA
+(0.8,0.9]    03_Jun                0.759   0.858   0.874   0.873   0.853   0.822   0.787
+(0.9,0.95]   03_Jun                0.801   0.877   0.924   0.928   0.905   0.877   0.878
+(0.95,1]     03_Jun                   NA   0.923   0.951   0.952   0.922   0.956   0.930
+allcats      03_Jun                0.751   0.871   0.928   0.937   0.896   0.852   0.872
+(0,0.7]      04_Jul-Aug-Sep        0.680   0.579   0.639      NA      NA      NA      NA
+(0.7,0.8]    04_Jul-Aug-Sep        0.757   0.717   0.702   0.672   0.722   0.810      NA
+(0.8,0.9]    04_Jul-Aug-Sep        0.768   0.846   0.846   0.777   0.853   0.829   0.831
+(0.9,0.95]   04_Jul-Aug-Sep        0.841   0.899   0.922   0.903   0.891   0.882   0.895
+(0.95,1]     04_Jul-Aug-Sep        0.822   0.920   0.955   0.953   0.936   0.940   0.941
+allcats      04_Jul-Aug-Sep        0.774   0.856   0.905   0.908   0.876   0.876   0.918
+(0,0.7]      05_Oct                   NA      NA      NA   0.666      NA   0.642      NA
+(0.7,0.8]    05_Oct                0.719   0.838   0.894      NA   0.713   0.627   0.699
+(0.8,0.9]    05_Oct                0.748   0.821   0.825   0.807   0.868   0.833   0.835
+(0.9,0.95]   05_Oct                0.870   0.854   0.900   0.907   0.896   0.877   0.880
+(0.95,1]     05_Oct                   NA   0.901   0.937   0.941   0.903   0.906   0.928
+allcats      05_Oct                0.752   0.847   0.898   0.898   0.860   0.839   0.892
+(0,0.7]      06_Nov                0.545   0.590   0.562   0.531   0.627      NA   0.588
+(0.7,0.8]    06_Nov                0.665   0.770      NA   0.749   0.749   0.676   0.662
+(0.8,0.9]    06_Nov                0.724   0.823   0.863   0.886   0.832   0.724   0.713
+(0.9,0.95]   06_Nov                   NA   0.850   0.905   0.921   0.850   0.787   0.850
+(0.95,1]     06_Nov                   NA   0.892   0.922   0.926   0.906   0.847   0.902
+allcats      06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.728
 
+```r
+# report frequency in each category
+gpoak_b_freq <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfocccat1))) %>%
+  group_by(season1, wday, sfocccat1) %>%
+  summarise (n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  select(-n) %>%
+  spread(wday, freq, fill=0) 
+
+gpoak_b_freq %>%
+  select(sfocccat1, everything()) %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE)) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+```
+
+
+
+sfocccat1    season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat    mean
+-----------  -------------------  ------  ------  ------  ------  ------  ------  ------  ------
+(0,0.7]      01_Jan-Dec            0.543   0.472   0.432   0.361   0.444   0.441   0.235   0.419
+(0.7,0.8]    01_Jan-Dec            0.229   0.194   0.216   0.306   0.361   0.324   0.206   0.262
+(0.8,0.9]    01_Jan-Dec            0.200   0.111   0.216   0.222   0.056   0.176   0.324   0.186
+(0.9,0.95]   01_Jan-Dec            0.029   0.167   0.081   0.056   0.111   0.059   0.235   0.105
+(0.95,1]     01_Jan-Dec            0.000   0.056   0.054   0.056   0.028   0.000   0.000   0.028
+(0,0.7]      02_Feb-Mar-Apr-May    0.536   0.132   0.059   0.014   0.043   0.101   0.043   0.133
+(0.7,0.8]    02_Feb-Mar-Apr-May    0.246   0.338   0.132   0.130   0.232   0.261   0.261   0.229
+(0.8,0.9]    02_Feb-Mar-Apr-May    0.188   0.353   0.382   0.333   0.507   0.478   0.348   0.370
+(0.9,0.95]   02_Feb-Mar-Apr-May    0.029   0.147   0.294   0.391   0.203   0.159   0.246   0.210
+(0.95,1]     02_Feb-Mar-Apr-May    0.000   0.029   0.132   0.130   0.014   0.000   0.101   0.058
+(0.7,0.8]    03_Jun                0.222   0.056   0.059   0.000   0.000   0.059   0.000   0.056
+(0.8,0.9]    03_Jun                0.667   0.278   0.059   0.062   0.250   0.412   0.167   0.271
+(0.9,0.95]   03_Jun                0.111   0.500   0.412   0.438   0.500   0.471   0.667   0.443
+(0.95,1]     03_Jun                0.000   0.167   0.471   0.500   0.250   0.059   0.167   0.230
+(0,0.7]      04_Jul-Aug-Sep        0.058   0.096   0.038   0.000   0.000   0.000   0.000   0.027
+(0.7,0.8]    04_Jul-Aug-Sep        0.135   0.019   0.075   0.075   0.096   0.038   0.000   0.063
+(0.8,0.9]    04_Jul-Aug-Sep        0.615   0.269   0.075   0.057   0.269   0.346   0.077   0.244
+(0.9,0.95]   04_Jul-Aug-Sep        0.135   0.365   0.321   0.283   0.385   0.365   0.327   0.312
+(0.95,1]     04_Jul-Aug-Sep        0.058   0.250   0.491   0.585   0.250   0.250   0.596   0.354
+(0,0.7]      05_Oct                0.000   0.000   0.000   0.053   0.000   0.056   0.000   0.015
+(0.7,0.8]    05_Oct                0.125   0.059   0.056   0.000   0.158   0.056   0.059   0.073
+(0.8,0.9]    05_Oct                0.812   0.529   0.167   0.105   0.316   0.333   0.059   0.332
+(0.9,0.95]   05_Oct                0.062   0.176   0.500   0.421   0.316   0.444   0.353   0.325
+(0.95,1]     05_Oct                0.000   0.235   0.278   0.421   0.211   0.111   0.529   0.255
+(0,0.7]      06_Nov                0.500   0.353   0.312   0.250   0.235   0.000   0.167   0.260
+(0.7,0.8]    06_Nov                0.222   0.118   0.000   0.062   0.176   0.444   0.167   0.170
+(0.8,0.9]    06_Nov                0.278   0.294   0.125   0.125   0.235   0.389   0.389   0.262
+(0.9,0.95]   06_Nov                0.000   0.118   0.312   0.188   0.294   0.111   0.167   0.170
+(0.95,1]     06_Nov                0.000   0.118   0.250   0.375   0.059   0.056   0.111   0.138
+
+Compare as ratio to mean for that season-wday
 
 ```r
 gpoak_d <- gpoak_c %>%
@@ -1121,57 +1239,59 @@ gpoak_e <- gpoak_d %>%
   mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE))
 
 gpoak_e %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
 
-sfocccat1    season1                 Sun     Mon    Tues     Wed   Thurs     Fri   Sat    mean
------------  -------------------  ------  ------  ------  ------  ------  ------  ----  ------
-allcats      01_Jan-Dec            1.000   1.000   1.000   1.000   1.000   1.000   1.0   1.000
-allcats      02_Feb-Mar-Apr-May    1.000   1.000   1.000   1.000   1.000   1.000   1.0   1.000
-allcats      03_Jun                1.000   1.000   1.000   1.000   1.000   1.000   1.0   1.000
-allcats      04_Jul-Aug-Sep        1.000   1.000   1.000   1.000   1.000   1.000   1.0   1.000
-allcats      05_Oct                1.000   1.000   1.000   1.000   1.000   1.000   1.0   1.000
-allcats      06_Nov                1.000   1.000   1.000   1.000   1.000   1.000   1.0   1.000
-(0,0.7]      01_Jan-Dec            0.952   0.902   0.875   0.804   0.896   0.918   0.8   0.885
-(0,0.7]      02_Feb-Mar-Apr-May    0.930   0.820   0.901   0.897   0.912   0.870   0.8   0.878
-(0,0.7]      04_Jul-Aug-Sep        0.878   0.677   0.706      NA      NA      NA    NA   0.754
-(0,0.7]      05_Oct                   NA      NA      NA   0.742      NA   0.766    NA   0.754
-(0,0.7]      06_Nov                0.877   0.792   0.705   0.656   0.805      NA   0.8   0.774
-(0.7,0.8]    01_Jan-Dec            0.976   1.019   1.017   1.074   1.058   1.039   1.0   1.026
-(0.7,0.8]    02_Feb-Mar-Apr-May    1.028   0.966   0.902   0.922   0.953   0.927   0.9   0.943
-(0.7,0.8]    03_Jun                0.937   0.830   0.890      NA      NA   0.886    NA   0.886
-(0.7,0.8]    04_Jul-Aug-Sep        0.977   0.838   0.776   0.740   0.825   0.926    NA   0.847
-(0.7,0.8]    05_Oct                0.956   0.990   0.996      NA   0.830   0.748   0.8   0.884
-(0.7,0.8]    06_Nov                1.069   1.033      NA   0.925   0.962   0.943   0.9   0.974
-(0.8,0.9]    01_Jan-Dec            1.112   1.001   1.102   1.129   0.992   1.067   1.0   1.064
-(0.8,0.9]    02_Feb-Mar-Apr-May    1.138   1.037   0.985   0.981   1.004   1.032   1.0   1.020
-(0.8,0.9]    03_Jun                1.010   0.986   0.942   0.933   0.952   0.965   0.9   0.956
-(0.8,0.9]    04_Jul-Aug-Sep        0.992   0.989   0.935   0.856   0.974   0.947   0.9   0.943
-(0.8,0.9]    05_Oct                0.995   0.970   0.919   0.899   1.009   0.994   0.9   0.960
-(0.8,0.9]    06_Nov                1.165   1.103   1.083   1.093   1.068   1.011   1.0   1.072
-(0.9,0.95]   01_Jan-Dec            1.324   1.141   1.212   1.137   1.167   1.196   1.1   1.181
-(0.9,0.95]   02_Feb-Mar-Apr-May    1.168   1.107   1.041   1.022   1.055   1.107   1.1   1.087
-(0.9,0.95]   03_Jun                1.066   1.007   0.996   0.991   1.010   1.030   1.0   1.015
-(0.9,0.95]   04_Jul-Aug-Sep        1.086   1.051   1.019   0.995   1.017   1.008   1.0   1.021
-(0.9,0.95]   05_Oct                1.157   1.009   1.003   1.010   1.042   1.045   1.0   1.036
-(0.9,0.95]   06_Nov                   NA   1.139   1.136   1.137   1.092   1.099   1.2   1.128
-(0.95,1]     01_Jan-Dec               NA   1.339   1.204   1.211   1.258      NA    NA   1.253
-(0.95,1]     02_Feb-Mar-Apr-May       NA   1.219   1.094   1.070   1.124      NA   1.2   1.138
-(0.95,1]     03_Jun                   NA   1.060   1.025   1.016   1.029   1.122   1.1   1.053
-(0.95,1]     04_Jul-Aug-Sep        1.062   1.075   1.055   1.050   1.069   1.073   1.0   1.059
-(0.95,1]     05_Oct                   NA   1.064   1.044   1.048   1.051   1.081   1.0   1.055
-(0.95,1]     06_Nov                   NA   1.196   1.157   1.142   1.163   1.182   1.2   1.180
+sfocccat1    season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat    mean
+-----------  -------------------  ------  ------  ------  ------  ------  ------  ------  ------
+(0,0.7]      01_Jan-Dec            0.952   0.902   0.875   0.804   0.896   0.918   0.847   0.885
+(0.7,0.8]    01_Jan-Dec            0.976   1.019   1.017   1.074   1.058   1.039   0.996   1.026
+(0.8,0.9]    01_Jan-Dec            1.112   1.001   1.102   1.129   0.992   1.067   1.045   1.064
+(0.9,0.95]   01_Jan-Dec            1.324   1.141   1.212   1.137   1.167   1.196   1.095   1.181
+(0.95,1]     01_Jan-Dec               NA   1.339   1.204   1.211   1.258      NA      NA   1.253
+allcats      01_Jan-Dec            1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(0,0.7]      02_Feb-Mar-Apr-May    0.930   0.820   0.901   0.897   0.912   0.870   0.812   0.878
+(0.7,0.8]    02_Feb-Mar-Apr-May    1.028   0.966   0.902   0.922   0.953   0.927   0.903   0.943
+(0.8,0.9]    02_Feb-Mar-Apr-May    1.138   1.037   0.985   0.981   1.004   1.032   0.964   1.020
+(0.9,0.95]   02_Feb-Mar-Apr-May    1.168   1.107   1.041   1.022   1.055   1.107   1.111   1.087
+(0.95,1]     02_Feb-Mar-Apr-May       NA   1.219   1.094   1.070   1.124      NA   1.181   1.138
+allcats      02_Feb-Mar-Apr-May    1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(0,0.7]      03_Jun                   NA      NA      NA      NA      NA      NA      NA     NaN
+(0.7,0.8]    03_Jun                0.937   0.830   0.890      NA      NA   0.886      NA   0.886
+(0.8,0.9]    03_Jun                1.010   0.986   0.942   0.933   0.952   0.965   0.902   0.956
+(0.9,0.95]   03_Jun                1.066   1.007   0.996   0.991   1.010   1.030   1.008   1.015
+(0.95,1]     03_Jun                   NA   1.060   1.025   1.016   1.029   1.122   1.067   1.053
+allcats      03_Jun                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(0,0.7]      04_Jul-Aug-Sep        0.878   0.677   0.706      NA      NA      NA      NA   0.754
+(0.7,0.8]    04_Jul-Aug-Sep        0.977   0.838   0.776   0.740   0.825   0.926      NA   0.847
+(0.8,0.9]    04_Jul-Aug-Sep        0.992   0.989   0.935   0.856   0.974   0.947   0.905   0.943
+(0.9,0.95]   04_Jul-Aug-Sep        1.086   1.051   1.019   0.995   1.017   1.008   0.975   1.021
+(0.95,1]     04_Jul-Aug-Sep        1.062   1.075   1.055   1.050   1.069   1.073   1.026   1.059
+allcats      04_Jul-Aug-Sep        1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(0,0.7]      05_Oct                   NA      NA      NA   0.742      NA   0.766      NA   0.754
+(0.7,0.8]    05_Oct                0.956   0.990   0.996      NA   0.830   0.748   0.783   0.884
+(0.8,0.9]    05_Oct                0.995   0.970   0.919   0.899   1.009   0.994   0.937   0.960
+(0.9,0.95]   05_Oct                1.157   1.009   1.003   1.010   1.042   1.045   0.987   1.036
+(0.95,1]     05_Oct                   NA   1.064   1.044   1.048   1.051   1.081   1.040   1.055
+allcats      05_Oct                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(0,0.7]      06_Nov                0.877   0.792   0.705   0.656   0.805      NA   0.808   0.774
+(0.7,0.8]    06_Nov                1.069   1.033      NA   0.925   0.962   0.943   0.910   0.974
+(0.8,0.9]    06_Nov                1.165   1.103   1.083   1.093   1.068   1.011   0.980   1.072
+(0.9,0.95]   06_Nov                   NA   1.139   1.136   1.137   1.092   1.099   1.168   1.128
+(0.95,1]     06_Nov                   NA   1.196   1.157   1.142   1.163   1.182   1.240   1.180
+allcats      06_Nov                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
 
 ******
-Grouped by SF group occupancy contribution
+### Grouped by SF group occupancy contribution
 
-Overall (so what is oak occupancy, without regard to SF occupancy)
 
 ```r
+# Overall (so what is oak occupancy, without regard to SF occupancy)
 gpoak_a_2 <- doaksf_seg_1 %>%
   filter(geo_ttl == "oak") %>%
+  filter(!(is.na(sfgroupcat1))) %>%
   group_by(season1, wday) %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
@@ -1180,132 +1300,775 @@ gpoak_a_2 <- doaksf_seg_1 %>%
   select(sfgroupcat1, everything())
 
 gpoak_a_2 %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
 
-sfgroupcat1   season1                 Sun     Mon    Tues     Wed   Thurs     Fri   Sat
-------------  -------------------  ------  ------  ------  ------  ------  ------  ----
-allcats       01_Jan-Dec            0.572   0.681   0.733   0.738   0.693   0.626   0.7
-allcats       02_Feb-Mar-Apr-May    0.650   0.768   0.849   0.856   0.806   0.762   0.8
-allcats       03_Jun                0.751   0.871   0.928   0.937   0.896   0.852   0.9
-allcats       04_Jul-Aug-Sep        0.774   0.856   0.905   0.908   0.876   0.876   0.9
-allcats       05_Oct                0.752   0.847   0.898   0.898   0.860   0.839   0.9
-allcats       06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.7
-
+sfgroupcat1   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+------------  -------------------  ------  ------  ------  ------  ------  ------  ------
+allcats       01_Jan-Dec            0.573   0.677   0.725   0.738   0.695   0.630   0.661
+allcats       02_Feb-Mar-Apr-May    0.647   0.762   0.841   0.849   0.802   0.757   0.774
+allcats       03_Jun                0.757   0.876   0.926   0.937   0.895   0.847   0.868
+allcats       04_Jul-Aug-Sep        0.769   0.847   0.900   0.904   0.873   0.871   0.916
+allcats       05_Oct                0.755   0.848   0.900   0.902   0.869   0.851   0.892
+allcats       06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.728
 
 ```r
+# mean by categories
 gpoak_b_2 <- doaksf_seg_1 %>%
   filter(geo_ttl == "oak") %>%
+  filter(!(is.na(sfgroupcat1))) %>%
   group_by(sfgroupcat1, season1, wday) %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
   spread(wday, occ) 
 
 gpoak_b_2 %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
 
-sfgroupcat1   season1                 Sun     Mon    Tues     Wed   Thurs     Fri   Sat
-------------  -------------------  ------  ------  ------  ------  ------  ------  ----
-(0,0.2]       01_Jan-Dec            0.552   0.628   0.658   0.650   0.654   0.613   0.6
-(0,0.2]       02_Feb-Mar-Apr-May    0.629   0.677   0.779   0.800   0.775   0.730   0.7
-(0,0.2]       03_Jun                0.700      NA   0.885      NA      NA   0.800   0.9
-(0,0.2]       04_Jul-Aug-Sep        0.761   0.800   0.865   0.878   0.848   0.872   0.9
-(0,0.2]       05_Oct                0.744      NA      NA   0.666      NA   0.793   0.8
-(0,0.2]       06_Nov                0.545   0.590   0.562   0.531   0.651   0.669   0.6
-(0.2,0.4]     01_Jan-Dec            0.593   0.745   0.830   0.828   0.752   0.639   0.7
-(0.2,0.4]     02_Feb-Mar-Apr-May    0.675   0.792   0.858   0.858   0.811   0.798   0.8
-(0.2,0.4]     03_Jun                0.767   0.876   0.934   0.937   0.895   0.856   0.9
-(0.2,0.4]     04_Jul-Aug-Sep        0.769   0.891   0.933   0.922   0.891   0.867   0.9
-(0.2,0.4]     05_Oct                0.748   0.835   0.890   0.906   0.862   0.869   0.9
-(0.2,0.4]     06_Nov                0.695   0.819   0.898   0.899   0.825   0.720   0.8
-(0.4,0.5]     01_Jan-Dec               NA      NA      NA   0.893   0.844      NA   0.8
-(0.4,0.5]     02_Feb-Mar-Apr-May    0.685   0.868   0.899      NA      NA   0.779   0.9
-(0.4,0.5]     03_Jun                   NA      NA      NA      NA      NA   0.956    NA
-(0.4,0.5]     04_Jul-Aug-Sep        0.824   0.900   0.926   0.939   0.958      NA    NA
-(0.4,0.5]     05_Oct                0.806   0.846   0.884   0.928   0.923   0.872    NA
-(0.4,0.5]     06_Nov                0.724   0.885      NA      NA   0.906   0.843   0.9
-(0.5,1]       01_Jan-Dec            0.757   0.902      NA      NA   0.862   0.792   0.8
-(0.5,1]       02_Feb-Mar-Apr-May       NA      NA   0.877   0.899   0.838      NA    NA
-(0.5,1]       04_Jul-Aug-Sep        0.843   0.947   0.975   0.973      NA      NA    NA
-(0.5,1]       05_Oct                   NA   0.903   0.945   0.950      NA      NA    NA
-(0.5,1]       06_Nov                   NA      NA   0.954   0.943      NA      NA    NA
-NA            01_Jan-Dec            0.565   0.720   0.795   0.732   0.679   0.602   0.6
-NA            02_Feb-Mar-Apr-May    0.658   0.786   0.872   0.876   0.820   0.778   0.8
-NA            03_Jun                0.738   0.856   0.933   0.935   0.901   0.869   0.9
-NA            04_Jul-Aug-Sep        0.792   0.883   0.920   0.920   0.885   0.891   0.9
-NA            05_Oct                0.712   0.828   0.865   0.833   0.691   0.627    NA
-
-Combine the tables
+sfgroupcat1   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+------------  -------------------  ------  ------  ------  ------  ------  ------  ------
+(0,0.2]       01_Jan-Dec            0.552   0.628   0.658   0.650   0.654   0.613   0.642
+(0,0.2]       02_Feb-Mar-Apr-May    0.629   0.677   0.779   0.800   0.775   0.730   0.746
+(0,0.2]       03_Jun                0.700      NA   0.885      NA      NA   0.800   0.863
+(0,0.2]       04_Jul-Aug-Sep        0.761   0.800   0.865   0.878   0.848   0.872   0.914
+(0,0.2]       05_Oct                0.744      NA      NA   0.666      NA   0.793   0.839
+(0,0.2]       06_Nov                0.545   0.590   0.562   0.531   0.651   0.669   0.648
+(0.2,0.4]     01_Jan-Dec            0.593   0.745   0.830   0.828   0.752   0.639   0.692
+(0.2,0.4]     02_Feb-Mar-Apr-May    0.675   0.792   0.858   0.858   0.811   0.798   0.841
+(0.2,0.4]     03_Jun                0.767   0.876   0.934   0.937   0.895   0.856   0.873
+(0.2,0.4]     04_Jul-Aug-Sep        0.769   0.891   0.933   0.922   0.891   0.867   0.921
+(0.2,0.4]     05_Oct                0.748   0.835   0.890   0.906   0.862   0.869   0.908
+(0.2,0.4]     06_Nov                0.695   0.819   0.898   0.899   0.825   0.720   0.808
+(0.4,0.5]     01_Jan-Dec               NA      NA      NA   0.893   0.844      NA   0.771
+(0.4,0.5]     02_Feb-Mar-Apr-May    0.685   0.868   0.899      NA      NA   0.779   0.861
+(0.4,0.5]     03_Jun                   NA      NA      NA      NA      NA   0.956      NA
+(0.4,0.5]     04_Jul-Aug-Sep        0.824   0.900   0.926   0.939   0.958      NA      NA
+(0.4,0.5]     05_Oct                0.806   0.846   0.884   0.928   0.923   0.872      NA
+(0.4,0.5]     06_Nov                0.724   0.885      NA      NA   0.906   0.843   0.885
+(0.5,1]       01_Jan-Dec            0.757   0.902      NA      NA   0.862   0.792   0.848
+(0.5,1]       02_Feb-Mar-Apr-May       NA      NA   0.877   0.899   0.838      NA      NA
+(0.5,1]       04_Jul-Aug-Sep        0.843   0.947   0.975   0.973      NA      NA      NA
+(0.5,1]       05_Oct                   NA   0.903   0.945   0.950      NA      NA      NA
+(0.5,1]       06_Nov                   NA      NA   0.954   0.943      NA      NA      NA
 
 ```r
-gpoak_c_2 <- bind_rows(gpoak_a_2, gpoak_b_2)
+# combine the tables
+gpoak_c_2 <- bind_rows(gpoak_a_2, gpoak_b_2) %>%
+  # complete fills in the missing combinations because otherwise
+  # there are some categories that are missing (dropped in the summarize step)
+  tidyr::complete(sfgroupcat1, season1) %>%
+  arrange(season1) 
 
 gpoak_c_2 %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 
 
-sfgroupcat1   season1                 Sun     Mon    Tues     Wed   Thurs     Fri   Sat
-------------  -------------------  ------  ------  ------  ------  ------  ------  ----
-allcats       01_Jan-Dec            0.572   0.681   0.733   0.738   0.693   0.626   0.7
-allcats       02_Feb-Mar-Apr-May    0.650   0.768   0.849   0.856   0.806   0.762   0.8
-allcats       03_Jun                0.751   0.871   0.928   0.937   0.896   0.852   0.9
-allcats       04_Jul-Aug-Sep        0.774   0.856   0.905   0.908   0.876   0.876   0.9
-allcats       05_Oct                0.752   0.847   0.898   0.898   0.860   0.839   0.9
-allcats       06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.7
-(0,0.2]       01_Jan-Dec            0.552   0.628   0.658   0.650   0.654   0.613   0.6
-(0,0.2]       02_Feb-Mar-Apr-May    0.629   0.677   0.779   0.800   0.775   0.730   0.7
-(0,0.2]       03_Jun                0.700      NA   0.885      NA      NA   0.800   0.9
-(0,0.2]       04_Jul-Aug-Sep        0.761   0.800   0.865   0.878   0.848   0.872   0.9
-(0,0.2]       05_Oct                0.744      NA      NA   0.666      NA   0.793   0.8
-(0,0.2]       06_Nov                0.545   0.590   0.562   0.531   0.651   0.669   0.6
-(0.2,0.4]     01_Jan-Dec            0.593   0.745   0.830   0.828   0.752   0.639   0.7
-(0.2,0.4]     02_Feb-Mar-Apr-May    0.675   0.792   0.858   0.858   0.811   0.798   0.8
-(0.2,0.4]     03_Jun                0.767   0.876   0.934   0.937   0.895   0.856   0.9
-(0.2,0.4]     04_Jul-Aug-Sep        0.769   0.891   0.933   0.922   0.891   0.867   0.9
-(0.2,0.4]     05_Oct                0.748   0.835   0.890   0.906   0.862   0.869   0.9
-(0.2,0.4]     06_Nov                0.695   0.819   0.898   0.899   0.825   0.720   0.8
-(0.4,0.5]     01_Jan-Dec               NA      NA      NA   0.893   0.844      NA   0.8
-(0.4,0.5]     02_Feb-Mar-Apr-May    0.685   0.868   0.899      NA      NA   0.779   0.9
-(0.4,0.5]     03_Jun                   NA      NA      NA      NA      NA   0.956    NA
-(0.4,0.5]     04_Jul-Aug-Sep        0.824   0.900   0.926   0.939   0.958      NA    NA
-(0.4,0.5]     05_Oct                0.806   0.846   0.884   0.928   0.923   0.872    NA
-(0.4,0.5]     06_Nov                0.724   0.885      NA      NA   0.906   0.843   0.9
-(0.5,1]       01_Jan-Dec            0.757   0.902      NA      NA   0.862   0.792   0.8
-(0.5,1]       02_Feb-Mar-Apr-May       NA      NA   0.877   0.899   0.838      NA    NA
-(0.5,1]       04_Jul-Aug-Sep        0.843   0.947   0.975   0.973      NA      NA    NA
-(0.5,1]       05_Oct                   NA   0.903   0.945   0.950      NA      NA    NA
-(0.5,1]       06_Nov                   NA      NA   0.954   0.943      NA      NA    NA
-NA            01_Jan-Dec            0.565   0.720   0.795   0.732   0.679   0.602   0.6
-NA            02_Feb-Mar-Apr-May    0.658   0.786   0.872   0.876   0.820   0.778   0.8
-NA            03_Jun                0.738   0.856   0.933   0.935   0.901   0.869   0.9
-NA            04_Jul-Aug-Sep        0.792   0.883   0.920   0.920   0.885   0.891   0.9
-NA            05_Oct                0.712   0.828   0.865   0.833   0.691   0.627    NA
-
+sfgroupcat1   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+------------  -------------------  ------  ------  ------  ------  ------  ------  ------
+(0,0.2]       01_Jan-Dec            0.552   0.628   0.658   0.650   0.654   0.613   0.642
+(0.2,0.4]     01_Jan-Dec            0.593   0.745   0.830   0.828   0.752   0.639   0.692
+(0.4,0.5]     01_Jan-Dec               NA      NA      NA   0.893   0.844      NA   0.771
+(0.5,1]       01_Jan-Dec            0.757   0.902      NA      NA   0.862   0.792   0.848
+allcats       01_Jan-Dec            0.573   0.677   0.725   0.738   0.695   0.630   0.661
+(0,0.2]       02_Feb-Mar-Apr-May    0.629   0.677   0.779   0.800   0.775   0.730   0.746
+(0.2,0.4]     02_Feb-Mar-Apr-May    0.675   0.792   0.858   0.858   0.811   0.798   0.841
+(0.4,0.5]     02_Feb-Mar-Apr-May    0.685   0.868   0.899      NA      NA   0.779   0.861
+(0.5,1]       02_Feb-Mar-Apr-May       NA      NA   0.877   0.899   0.838      NA      NA
+allcats       02_Feb-Mar-Apr-May    0.647   0.762   0.841   0.849   0.802   0.757   0.774
+(0,0.2]       03_Jun                0.700      NA   0.885      NA      NA   0.800   0.863
+(0.2,0.4]     03_Jun                0.767   0.876   0.934   0.937   0.895   0.856   0.873
+(0.4,0.5]     03_Jun                   NA      NA      NA      NA      NA   0.956      NA
+(0.5,1]       03_Jun                   NA      NA      NA      NA      NA      NA      NA
+allcats       03_Jun                0.757   0.876   0.926   0.937   0.895   0.847   0.868
+(0,0.2]       04_Jul-Aug-Sep        0.761   0.800   0.865   0.878   0.848   0.872   0.914
+(0.2,0.4]     04_Jul-Aug-Sep        0.769   0.891   0.933   0.922   0.891   0.867   0.921
+(0.4,0.5]     04_Jul-Aug-Sep        0.824   0.900   0.926   0.939   0.958      NA      NA
+(0.5,1]       04_Jul-Aug-Sep        0.843   0.947   0.975   0.973      NA      NA      NA
+allcats       04_Jul-Aug-Sep        0.769   0.847   0.900   0.904   0.873   0.871   0.916
+(0,0.2]       05_Oct                0.744      NA      NA   0.666      NA   0.793   0.839
+(0.2,0.4]     05_Oct                0.748   0.835   0.890   0.906   0.862   0.869   0.908
+(0.4,0.5]     05_Oct                0.806   0.846   0.884   0.928   0.923   0.872      NA
+(0.5,1]       05_Oct                   NA   0.903   0.945   0.950      NA      NA      NA
+allcats       05_Oct                0.755   0.848   0.900   0.902   0.869   0.851   0.892
+(0,0.2]       06_Nov                0.545   0.590   0.562   0.531   0.651   0.669   0.648
+(0.2,0.4]     06_Nov                0.695   0.819   0.898   0.899   0.825   0.720   0.808
+(0.4,0.5]     06_Nov                0.724   0.885      NA      NA   0.906   0.843   0.885
+(0.5,1]       06_Nov                   NA      NA   0.954   0.943      NA      NA      NA
+allcats       06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.728
 
 ```r
-# following doesn't work because the Jun season (and maybe others) are missing from
-# at least one of the category groupings
+# report frequency in each category
+gpoak_b_2_freq <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfgroupcat1))) %>%
+  group_by(season1, wday, sfgroupcat1) %>%
+  summarise (n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  select(-n) %>%
+  spread(wday, freq, fill=0) 
 
-# gpoak_d_2 <- gpoak_c_2 %>%
-#   group_by(season1) %>%
-#   mutate_each(funs(value = ./.[sfgroupcat1 == "allcats"]), -sfgroupcat1, -season1) %>%
-#   ungroup()
-# 
-# # calculate a mean of the weekdays across each row, removing NAs
-# gpoak_e_2 <- gpoak_d_2 %>% 
-#   mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE))
-# 
-# gpoak_e_2 %>%
-#   kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+gpoak_b_2_freq %>%
+  select(sfgroupcat1, everything()) %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE)) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
-### Occupancy grouped by SF-based categories - modified approach
-After discussing with Anthony, the suggestion 
 
+
+sfgroupcat1   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat    mean
+------------  -------------------  ------  ------  ------  ------  ------  ------  ------  ------
+(0,0.2]       01_Jan-Dec            0.613   0.625   0.606   0.516   0.645   0.759   0.767   0.647
+(0.2,0.4]     01_Jan-Dec            0.355   0.344   0.394   0.452   0.290   0.172   0.167   0.311
+(0.4,0.5]     01_Jan-Dec            0.000   0.000   0.000   0.032   0.032   0.000   0.033   0.014
+(0.5,1]       01_Jan-Dec            0.032   0.031   0.000   0.000   0.032   0.069   0.033   0.028
+(0,0.2]       02_Feb-Mar-Apr-May    0.615   0.275   0.235   0.173   0.269   0.577   0.725   0.410
+(0.2,0.4]     02_Feb-Mar-Apr-May    0.346   0.706   0.725   0.808   0.712   0.346   0.196   0.548
+(0.4,0.5]     02_Feb-Mar-Apr-May    0.038   0.020   0.020   0.000   0.000   0.077   0.078   0.033
+(0.5,1]       02_Feb-Mar-Apr-May    0.000   0.000   0.020   0.019   0.019   0.000   0.000   0.008
+(0,0.2]       03_Jun                0.154   0.000   0.154   0.000   0.000   0.308   0.500   0.159
+(0.2,0.4]     03_Jun                0.846   1.000   0.846   1.000   1.000   0.615   0.500   0.830
+(0.4,0.5]     03_Jun                0.000   0.000   0.000   0.000   0.000   0.077   0.000   0.011
+(0,0.2]       04_Jul-Aug-Sep        0.692   0.513   0.513   0.475   0.513   0.667   0.744   0.588
+(0.2,0.4]     04_Jul-Aug-Sep        0.231   0.385   0.359   0.425   0.436   0.333   0.256   0.346
+(0.4,0.5]     04_Jul-Aug-Sep        0.026   0.077   0.077   0.075   0.051   0.000   0.000   0.044
+(0.5,1]       04_Jul-Aug-Sep        0.051   0.026   0.051   0.025   0.000   0.000   0.000   0.022
+(0,0.2]       05_Oct                0.067   0.000   0.000   0.056   0.000   0.235   0.235   0.085
+(0.2,0.4]     05_Oct                0.800   0.750   0.765   0.556   0.889   0.706   0.765   0.747
+(0.4,0.5]     05_Oct                0.133   0.062   0.059   0.333   0.111   0.059   0.000   0.108
+(0.5,1]       05_Oct                0.000   0.188   0.176   0.056   0.000   0.000   0.000   0.060
+(0,0.2]       06_Nov                0.500   0.353   0.312   0.250   0.294   0.333   0.556   0.371
+(0.2,0.4]     06_Nov                0.444   0.529   0.625   0.688   0.647   0.556   0.333   0.546
+(0.4,0.5]     06_Nov                0.056   0.118   0.000   0.000   0.059   0.111   0.111   0.065
+(0.5,1]       06_Nov                0.000   0.000   0.062   0.062   0.000   0.000   0.000   0.018
+
+Compare as ratio to mean for that season-wday
+
+```r
+gpoak_d_2 <- gpoak_c_2 %>%
+  group_by(season1) %>%
+  mutate_each(funs(value = ./.[sfgroupcat1 == "allcats"]), -sfgroupcat1, -season1) %>%
+  ungroup()
+
+# calculate a mean of the weekdays across each row, removing NAs
+gpoak_e_2 <- gpoak_d_2 %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE))
+
+gpoak_e_2 %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+```
+
+
+
+sfgroupcat1   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat    mean
+------------  -------------------  ------  ------  ------  ------  ------  ------  ------  ------
+(0,0.2]       01_Jan-Dec            0.963   0.928   0.907   0.881   0.941   0.974   0.970   0.938
+(0.2,0.4]     01_Jan-Dec            1.035   1.100   1.144   1.121   1.081   1.014   1.046   1.077
+(0.4,0.5]     01_Jan-Dec               NA      NA      NA   1.210   1.214      NA   1.166   1.196
+(0.5,1]       01_Jan-Dec            1.322   1.333      NA      NA   1.240   1.257   1.283   1.287
+allcats       01_Jan-Dec            1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(0,0.2]       02_Feb-Mar-Apr-May    0.972   0.889   0.926   0.942   0.967   0.964   0.964   0.946
+(0.2,0.4]     02_Feb-Mar-Apr-May    1.043   1.039   1.021   1.011   1.011   1.054   1.087   1.038
+(0.4,0.5]     02_Feb-Mar-Apr-May    1.059   1.139   1.070      NA      NA   1.028   1.113   1.082
+(0.5,1]       02_Feb-Mar-Apr-May       NA      NA   1.043   1.059   1.046      NA      NA   1.049
+allcats       02_Feb-Mar-Apr-May    1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(0,0.2]       03_Jun                0.926      NA   0.955      NA      NA   0.945   0.994   0.955
+(0.2,0.4]     03_Jun                1.014   1.000   1.008   1.000   1.000   1.011   1.006   1.006
+(0.4,0.5]     03_Jun                   NA      NA      NA      NA      NA   1.129      NA   1.129
+(0.5,1]       03_Jun                   NA      NA      NA      NA      NA      NA      NA     NaN
+allcats       03_Jun                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(0,0.2]       04_Jul-Aug-Sep        0.990   0.945   0.961   0.971   0.972   1.002   0.998   0.977
+(0.2,0.4]     04_Jul-Aug-Sep        1.000   1.053   1.037   1.021   1.021   0.996   1.005   1.019
+(0.4,0.5]     04_Jul-Aug-Sep        1.072   1.062   1.029   1.039   1.098      NA      NA   1.060
+(0.5,1]       04_Jul-Aug-Sep        1.097   1.118   1.084   1.077      NA      NA      NA   1.094
+allcats       04_Jul-Aug-Sep        1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(0,0.2]       05_Oct                0.986      NA      NA   0.739      NA   0.932   0.941   0.899
+(0.2,0.4]     05_Oct                0.990   0.984   0.990   1.004   0.992   1.021   1.018   1.000
+(0.4,0.5]     05_Oct                1.067   0.997   0.982   1.028   1.062   1.024      NA   1.027
+(0.5,1]       05_Oct                   NA   1.065   1.051   1.053      NA      NA      NA   1.056
+allcats       05_Oct                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(0,0.2]       06_Nov                0.877   0.792   0.705   0.656   0.837   0.933   0.891   0.813
+(0.2,0.4]     06_Nov                1.117   1.097   1.128   1.110   1.059   1.005   1.110   1.090
+(0.4,0.5]     06_Nov                1.164   1.187      NA      NA   1.163   1.177   1.216   1.181
+(0.5,1]       06_Nov                   NA      NA   1.197   1.165      NA      NA      NA   1.181
+allcats       06_Nov                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+
+## IV.B. Occupancy impact to Oak grouped by SF-based categories: _Modified approach_
+This initial approach is based on z-scores of various occupancy measures in SF
+
+After discussing with Anthony, the suggestion was to look at days when SF occupancy is a standard deviation above its average, and whether Oakland is also
+
+Graph of occupancy z-scores (number of standard deviations above or below mean)
+
+```r
+doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  ggplot(aes(x=sfzocc1, y=oakzocc1)) +
+  geom_point()
+```
+
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-28-1.png)<!-- -->
+
+
+******
+### Grouped by SF total occupancy (using z-score)  
+Oakland occupancy during various sf occupancy categories based on z-score of total occupancy
+
+```r
+# mean occupancy in all categories
+tk2oak_a <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  group_by(season1, wday) %>%
+  summarise (occ = mean(occ)) %>%
+  ungroup() %>%
+  spread(wday, occ) %>%
+  mutate(sfzocc1_cat = "allcats") %>%
+  select(sfzocc1_cat, everything())
+
+tk2oak_a %>%
+  kable(digits=c(1,rep(3,8)), format.args = list(big.mark = ","))
+```
+
+
+
+sfzocc1_cat   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+------------  -------------------  ------  ------  ------  ------  ------  ------  ------
+allcats       01_Jan-Dec            0.572   0.681   0.733   0.738   0.693   0.626   0.656
+allcats       02_Feb-Mar-Apr-May    0.650   0.768   0.849   0.856   0.806   0.762   0.775
+allcats       03_Jun                0.751   0.871   0.928   0.937   0.896   0.852   0.872
+allcats       04_Jul-Aug-Sep        0.774   0.856   0.905   0.908   0.876   0.876   0.918
+allcats       05_Oct                0.752   0.847   0.898   0.898   0.860   0.839   0.892
+allcats       06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.728
+
+```r
+# mean occupancy by categories
+tk2oak_b <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  group_by(season1, wday, sfzocc1_cat) %>%
+  summarise (occ = mean(occ)) %>%
+  ungroup() %>%
+  spread(wday, occ) 
+
+tk2oak_b %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+```
+
+
+
+season1              sfzocc1_cat      Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+-------------------  ------------  ------  ------  ------  ------  ------  ------  ------
+01_Jan-Dec           (-5,-2]           NA   0.393      NA      NA   0.499      NA      NA
+01_Jan-Dec           (-2,-1]        0.516   0.566   0.521   0.532   0.525   0.509   0.508
+01_Jan-Dec           (-1,0]         0.561   0.637   0.747   0.678   0.666   0.607   0.630
+01_Jan-Dec           (0,1]          0.559   0.690   0.801   0.821   0.730   0.655   0.687
+01_Jan-Dec           (1,2]          0.651   0.811   0.841   0.870   0.799   0.672   0.719
+01_Jan-Dec           (2,2.5]           NA      NA      NA      NA      NA   0.823      NA
+02_Feb-Mar-Apr-May   (-5,-2]        0.553   0.654   0.735   0.772   0.706   0.658   0.629
+02_Feb-Mar-Apr-May   (-2,-1]        0.574   0.619   0.752   0.780   0.749   0.678   0.655
+02_Feb-Mar-Apr-May   (-1,0]         0.612   0.729   0.810   0.827   0.782   0.733   0.730
+02_Feb-Mar-Apr-May   (0,1]          0.668   0.791   0.865   0.869   0.822   0.779   0.787
+02_Feb-Mar-Apr-May   (1,2]          0.758   0.858   0.929   0.913   0.858   0.850   0.907
+02_Feb-Mar-Apr-May   (2,2.5]        0.759      NA      NA      NA      NA      NA      NA
+03_Jun               (-5,-2]           NA   0.722   0.826      NA      NA      NA      NA
+03_Jun               (-2,-1]        0.715      NA      NA      NA   0.820   0.768   0.794
+03_Jun               (-1,0]         0.707   0.844   0.919   0.914   0.880   0.811   0.811
+03_Jun               (0,1]          0.765   0.880   0.943   0.950   0.901   0.864   0.904
+03_Jun               (1,2]          0.796   0.923      NA   0.951   0.922   0.937   0.944
+04_Jul-Aug-Sep       (-5,-2]        0.680   0.579   0.662   0.672   0.707   0.810   0.836
+04_Jul-Aug-Sep       (-2,-1]        0.770   0.717   0.719   0.763   0.788   0.809   0.881
+04_Jul-Aug-Sep       (-1,0]         0.753   0.824   0.874   0.872   0.862   0.847   0.894
+04_Jul-Aug-Sep       (0,1]          0.777   0.901   0.944   0.943   0.907   0.893   0.938
+04_Jul-Aug-Sep       (1,2]          0.838      NA      NA      NA   0.941   0.946   0.963
+05_Oct               (-5,-2]           NA      NA   0.894   0.666   0.691   0.642   0.699
+05_Oct               (-2,-1]        0.694   0.838   0.709   0.807   0.725   0.627      NA
+05_Oct               (-1,0]         0.733   0.802   0.887   0.906   0.869   0.841   0.866
+05_Oct               (0,1]          0.756   0.849   0.906   0.930   0.888   0.868   0.913
+05_Oct               (1,2]          0.870   0.901   0.959      NA   0.903   0.906      NA
+06_Nov               (-2,-1]        0.495   0.583   0.520   0.531   0.627   0.655   0.588
+06_Nov               (-1,0]         0.560   0.625   0.728   0.749   0.749   0.682   0.669
+06_Nov               (0,1]          0.673   0.808   0.903   0.917   0.846   0.747   0.773
+06_Nov               (1,2]          0.732   0.871      NA      NA   0.856   0.807   0.902
+
+```r
+# combine the tables
+tk2oak_c <- bind_rows(tk2oak_a, tk2oak_b) %>%
+  complete(sfzocc1_cat, season1) %>%
+  arrange(season1)
+
+tk2oak_c %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+```
+
+
+
+sfzocc1_cat   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+------------  -------------------  ------  ------  ------  ------  ------  ------  ------
+(-1,0]        01_Jan-Dec            0.561   0.637   0.747   0.678   0.666   0.607   0.630
+(-2,-1]       01_Jan-Dec            0.516   0.566   0.521   0.532   0.525   0.509   0.508
+(-5,-2]       01_Jan-Dec               NA   0.393      NA      NA   0.499      NA      NA
+(0,1]         01_Jan-Dec            0.559   0.690   0.801   0.821   0.730   0.655   0.687
+(1,2]         01_Jan-Dec            0.651   0.811   0.841   0.870   0.799   0.672   0.719
+(2,2.5]       01_Jan-Dec               NA      NA      NA      NA      NA   0.823      NA
+allcats       01_Jan-Dec            0.572   0.681   0.733   0.738   0.693   0.626   0.656
+(-1,0]        02_Feb-Mar-Apr-May    0.612   0.729   0.810   0.827   0.782   0.733   0.730
+(-2,-1]       02_Feb-Mar-Apr-May    0.574   0.619   0.752   0.780   0.749   0.678   0.655
+(-5,-2]       02_Feb-Mar-Apr-May    0.553   0.654   0.735   0.772   0.706   0.658   0.629
+(0,1]         02_Feb-Mar-Apr-May    0.668   0.791   0.865   0.869   0.822   0.779   0.787
+(1,2]         02_Feb-Mar-Apr-May    0.758   0.858   0.929   0.913   0.858   0.850   0.907
+(2,2.5]       02_Feb-Mar-Apr-May    0.759      NA      NA      NA      NA      NA      NA
+allcats       02_Feb-Mar-Apr-May    0.650   0.768   0.849   0.856   0.806   0.762   0.775
+(-1,0]        03_Jun                0.707   0.844   0.919   0.914   0.880   0.811   0.811
+(-2,-1]       03_Jun                0.715      NA      NA      NA   0.820   0.768   0.794
+(-5,-2]       03_Jun                   NA   0.722   0.826      NA      NA      NA      NA
+(0,1]         03_Jun                0.765   0.880   0.943   0.950   0.901   0.864   0.904
+(1,2]         03_Jun                0.796   0.923      NA   0.951   0.922   0.937   0.944
+(2,2.5]       03_Jun                   NA      NA      NA      NA      NA      NA      NA
+allcats       03_Jun                0.751   0.871   0.928   0.937   0.896   0.852   0.872
+(-1,0]        04_Jul-Aug-Sep        0.753   0.824   0.874   0.872   0.862   0.847   0.894
+(-2,-1]       04_Jul-Aug-Sep        0.770   0.717   0.719   0.763   0.788   0.809   0.881
+(-5,-2]       04_Jul-Aug-Sep        0.680   0.579   0.662   0.672   0.707   0.810   0.836
+(0,1]         04_Jul-Aug-Sep        0.777   0.901   0.944   0.943   0.907   0.893   0.938
+(1,2]         04_Jul-Aug-Sep        0.838      NA      NA      NA   0.941   0.946   0.963
+(2,2.5]       04_Jul-Aug-Sep           NA      NA      NA      NA      NA      NA      NA
+allcats       04_Jul-Aug-Sep        0.774   0.856   0.905   0.908   0.876   0.876   0.918
+(-1,0]        05_Oct                0.733   0.802   0.887   0.906   0.869   0.841   0.866
+(-2,-1]       05_Oct                0.694   0.838   0.709   0.807   0.725   0.627      NA
+(-5,-2]       05_Oct                   NA      NA   0.894   0.666   0.691   0.642   0.699
+(0,1]         05_Oct                0.756   0.849   0.906   0.930   0.888   0.868   0.913
+(1,2]         05_Oct                0.870   0.901   0.959      NA   0.903   0.906      NA
+(2,2.5]       05_Oct                   NA      NA      NA      NA      NA      NA      NA
+allcats       05_Oct                0.752   0.847   0.898   0.898   0.860   0.839   0.892
+(-1,0]        06_Nov                0.560   0.625   0.728   0.749   0.749   0.682   0.669
+(-2,-1]       06_Nov                0.495   0.583   0.520   0.531   0.627   0.655   0.588
+(-5,-2]       06_Nov                   NA      NA      NA      NA      NA      NA      NA
+(0,1]         06_Nov                0.673   0.808   0.903   0.917   0.846   0.747   0.773
+(1,2]         06_Nov                0.732   0.871      NA      NA   0.856   0.807   0.902
+(2,2.5]       06_Nov                   NA      NA      NA      NA      NA      NA      NA
+allcats       06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.728
+
+```r
+# report frequency in each category
+tk2oak_b_freq <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfzocc1_cat))) %>%
+  group_by(season1, wday, sfzocc1_cat) %>%
+  summarise (n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  select(-n) %>%
+  spread(wday, freq, fill=0) 
+
+tk2oak_b_freq %>%
+  select(sfzocc1_cat, everything()) %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE)) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+```
+
+
+
+sfzocc1_cat   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat    mean
+------------  -------------------  ------  ------  ------  ------  ------  ------  ------  ------
+(-5,-2]       01_Jan-Dec            0.000   0.028   0.000   0.000   0.028   0.000   0.000   0.008
+(-2,-1]       01_Jan-Dec            0.200   0.056   0.216   0.194   0.111   0.147   0.147   0.153
+(-1,0]        01_Jan-Dec            0.286   0.389   0.324   0.250   0.306   0.324   0.206   0.298
+(0,1]         01_Jan-Dec            0.286   0.306   0.216   0.389   0.389   0.324   0.412   0.332
+(1,2]         01_Jan-Dec            0.229   0.222   0.243   0.167   0.167   0.176   0.235   0.206
+(2,2.5]       01_Jan-Dec            0.000   0.000   0.000   0.000   0.000   0.029   0.000   0.004
+(-5,-2]       02_Feb-Mar-Apr-May    0.014   0.015   0.015   0.029   0.014   0.043   0.029   0.023
+(-2,-1]       02_Feb-Mar-Apr-May    0.087   0.103   0.103   0.087   0.101   0.159   0.101   0.106
+(-1,0]        02_Feb-Mar-Apr-May    0.449   0.279   0.221   0.232   0.333   0.203   0.362   0.297
+(0,1]         02_Feb-Mar-Apr-May    0.261   0.397   0.515   0.493   0.362   0.391   0.290   0.387
+(1,2]         02_Feb-Mar-Apr-May    0.159   0.206   0.147   0.159   0.188   0.203   0.217   0.183
+(2,2.5]       02_Feb-Mar-Apr-May    0.029   0.000   0.000   0.000   0.000   0.000   0.000   0.004
+(-5,-2]       03_Jun                0.000   0.056   0.059   0.000   0.000   0.000   0.000   0.016
+(-2,-1]       03_Jun                0.111   0.000   0.000   0.000   0.062   0.118   0.056   0.050
+(-1,0]        03_Jun                0.222   0.222   0.353   0.375   0.250   0.176   0.333   0.276
+(0,1]         03_Jun                0.500   0.556   0.588   0.500   0.438   0.588   0.500   0.524
+(1,2]         03_Jun                0.167   0.167   0.000   0.125   0.250   0.118   0.111   0.134
+(-5,-2]       04_Jul-Aug-Sep        0.077   0.096   0.075   0.075   0.077   0.038   0.058   0.071
+(-2,-1]       04_Jul-Aug-Sep        0.096   0.019   0.038   0.038   0.058   0.135   0.096   0.068
+(-1,0]        04_Jul-Aug-Sep        0.212   0.135   0.132   0.113   0.269   0.308   0.212   0.197
+(0,1]         04_Jul-Aug-Sep        0.442   0.750   0.755   0.774   0.500   0.308   0.615   0.592
+(1,2]         04_Jul-Aug-Sep        0.173   0.000   0.000   0.000   0.096   0.212   0.019   0.071
+(-5,-2]       05_Oct                0.000   0.000   0.056   0.053   0.053   0.056   0.059   0.039
+(-2,-1]       05_Oct                0.062   0.059   0.056   0.105   0.105   0.056   0.000   0.063
+(-1,0]        05_Oct                0.312   0.294   0.278   0.211   0.211   0.278   0.176   0.251
+(0,1]         05_Oct                0.562   0.412   0.444   0.632   0.421   0.500   0.765   0.534
+(1,2]         05_Oct                0.062   0.235   0.167   0.000   0.211   0.111   0.000   0.112
+(-2,-1]       06_Nov                0.167   0.294   0.250   0.250   0.235   0.167   0.167   0.218
+(-1,0]        06_Nov                0.278   0.059   0.062   0.062   0.176   0.389   0.278   0.186
+(0,1]         06_Nov                0.389   0.412   0.688   0.688   0.471   0.278   0.444   0.481
+(1,2]         06_Nov                0.167   0.235   0.000   0.000   0.118   0.167   0.111   0.114
+
+Compare as ratio to mean for that season-wday
+
+```r
+tk2oak_d <- tk2oak_c %>%
+  group_by(season1) %>%
+  mutate_each(funs(value = ./.[sfzocc1_cat == "allcats"]), -sfzocc1_cat, -season1) %>%
+  ungroup()
+
+# calculate a mean of the weekdays across each row, removing NAs
+tk2oak_e <- tk2oak_d %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE))
+
+tk2oak_e %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+```
+
+
+
+sfzocc1_cat   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat    mean
+------------  -------------------  ------  ------  ------  ------  ------  ------  ------  ------
+(-1,0]        01_Jan-Dec            0.980   0.935   1.020   0.920   0.962   0.969   0.959   0.964
+(-2,-1]       01_Jan-Dec            0.902   0.831   0.711   0.722   0.758   0.813   0.774   0.787
+(-5,-2]       01_Jan-Dec               NA   0.577      NA      NA   0.720      NA      NA   0.649
+(0,1]         01_Jan-Dec            0.977   1.013   1.093   1.114   1.053   1.047   1.047   1.049
+(1,2]         01_Jan-Dec            1.139   1.190   1.148   1.179   1.153   1.074   1.095   1.140
+(2,2.5]       01_Jan-Dec               NA      NA      NA      NA      NA   1.316      NA   1.316
+allcats       01_Jan-Dec            1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(-1,0]        02_Feb-Mar-Apr-May    0.942   0.949   0.955   0.966   0.970   0.961   0.942   0.955
+(-2,-1]       02_Feb-Mar-Apr-May    0.883   0.806   0.886   0.912   0.929   0.889   0.846   0.879
+(-5,-2]       02_Feb-Mar-Apr-May    0.851   0.851   0.866   0.902   0.876   0.863   0.812   0.860
+(0,1]         02_Feb-Mar-Apr-May    1.027   1.031   1.019   1.016   1.019   1.021   1.016   1.021
+(1,2]         02_Feb-Mar-Apr-May    1.166   1.118   1.095   1.067   1.064   1.114   1.171   1.114
+(2,2.5]       02_Feb-Mar-Apr-May    1.168      NA      NA      NA      NA      NA      NA   1.168
+allcats       02_Feb-Mar-Apr-May    1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(-1,0]        03_Jun                0.940   0.970   0.991   0.976   0.982   0.951   0.931   0.963
+(-2,-1]       03_Jun                0.951      NA      NA      NA   0.915   0.901   0.911   0.919
+(-5,-2]       03_Jun                   NA   0.830   0.890      NA      NA      NA      NA   0.860
+(0,1]         03_Jun                1.018   1.011   1.017   1.014   1.006   1.014   1.038   1.017
+(1,2]         03_Jun                1.059   1.060      NA   1.016   1.029   1.100   1.083   1.058
+(2,2.5]       03_Jun                   NA      NA      NA      NA      NA      NA      NA     NaN
+allcats       03_Jun                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(-1,0]        04_Jul-Aug-Sep        0.972   0.963   0.965   0.961   0.984   0.968   0.974   0.970
+(-2,-1]       04_Jul-Aug-Sep        0.994   0.838   0.795   0.841   0.900   0.924   0.960   0.893
+(-5,-2]       04_Jul-Aug-Sep        0.878   0.677   0.731   0.740   0.807   0.926   0.911   0.810
+(0,1]         04_Jul-Aug-Sep        1.004   1.052   1.043   1.039   1.036   1.019   1.022   1.031
+(1,2]         04_Jul-Aug-Sep        1.082      NA      NA      NA   1.075   1.081   1.049   1.071
+(2,2.5]       04_Jul-Aug-Sep           NA      NA      NA      NA      NA      NA      NA     NaN
+allcats       04_Jul-Aug-Sep        1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(-1,0]        05_Oct                0.974   0.947   0.988   1.009   1.011   1.003   0.971   0.986
+(-2,-1]       05_Oct                0.923   0.990   0.790   0.899   0.843   0.748      NA   0.865
+(-5,-2]       05_Oct                   NA      NA   0.996   0.742   0.804   0.766   0.783   0.818
+(0,1]         05_Oct                1.005   1.003   1.009   1.036   1.033   1.035   1.023   1.020
+(1,2]         05_Oct                1.157   1.064   1.068      NA   1.051   1.081      NA   1.084
+(2,2.5]       05_Oct                   NA      NA      NA      NA      NA      NA      NA     NaN
+allcats       05_Oct                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(-1,0]        06_Nov                0.901   0.838   0.914   0.925   0.962   0.952   0.919   0.916
+(-2,-1]       06_Nov                0.796   0.782   0.653   0.656   0.805   0.914   0.808   0.773
+(-5,-2]       06_Nov                   NA      NA      NA      NA      NA      NA      NA     NaN
+(0,1]         06_Nov                1.082   1.083   1.134   1.132   1.087   1.043   1.063   1.089
+(1,2]         06_Nov                1.177   1.168      NA      NA   1.099   1.127   1.240   1.162
+(2,2.5]       06_Nov                   NA      NA      NA      NA      NA      NA      NA     NaN
+allcats       06_Nov                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+
+
+Graph of occupancy z-scores (group for sf, total for oak). I think the striations come from the fact that we've calculated a z-score relative to 42 different category means for each. So dates that fit in a certain season-wday are being divided by the same number, and maybe the relationship between those two numbers (sf and oak) stays as a consistent underlying pattern).
+
+```r
+doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  ggplot(aes(x=sfzgroup1, y=oakzocc1)) +
+  geom_point()
+```
+
+```
+## Warning: Removed 279 rows containing missing values (geom_point).
+```
+
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-31-1.png)<!-- -->
+
+
+******
+### Grouped by SF group occupancy (using z-score)  
+
+Oakland occupancy during various sf group demand categories based on z-score of group occupancy. The NAs in sfzgroup1_cat are days when we don't have SF group data. I decided to drop them so that the relative frequency would make sense.
+
+```r
+# mean occupancy in all categories
+tk2oak_a_2 <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfzgroup1_cat))) %>%
+  group_by(season1, wday) %>%
+  summarise (occ = mean(occ)) %>%
+  ungroup() %>%
+  spread(wday, occ) %>%
+  mutate(sfzgroup1_cat = "allcats") %>%
+  select(sfzgroup1_cat, everything())
+
+tk2oak_a_2 %>%
+  kable(digits=c(1,rep(3,8)), format.args = list(big.mark = ","))
+```
+
+
+
+sfzgroup1_cat   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+--------------  -------------------  ------  ------  ------  ------  ------  ------  ------
+allcats         01_Jan-Dec            0.573   0.677   0.725   0.738   0.695   0.630   0.661
+allcats         02_Feb-Mar-Apr-May    0.647   0.762   0.841   0.849   0.802   0.757   0.774
+allcats         03_Jun                0.757   0.876   0.926   0.937   0.895   0.847   0.868
+allcats         04_Jul-Aug-Sep        0.769   0.847   0.900   0.904   0.873   0.871   0.916
+allcats         05_Oct                0.755   0.848   0.900   0.902   0.869   0.851   0.892
+allcats         06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.728
+
+```r
+# mean occupancy by categories
+tk2oak_b_2 <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfzgroup1_cat))) %>%
+  group_by(season1, wday, sfzgroup1_cat) %>%
+  summarise (occ = mean(occ)) %>%
+  ungroup() %>%
+  spread(wday, occ) 
+
+tk2oak_b_2 %>%
+  kable(digits=c(1,rep(3,8)), format.args = list(big.mark = ","))
+```
+
+
+
+season1              sfzgroup1_cat      Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+-------------------  --------------  ------  ------  ------  ------  ------  ------  ------
+01_Jan-Dec           (-2,-1]          0.554   0.554   0.555   0.566   0.589   0.596   0.604
+01_Jan-Dec           (-1,0]           0.551   0.687   0.725   0.724   0.659   0.605   0.629
+01_Jan-Dec           (0,1]            0.573   0.679   0.798   0.816   0.745   0.644   0.688
+01_Jan-Dec           (1,2]            0.645   0.803   0.860   0.868   0.831      NA   0.629
+01_Jan-Dec           (2,3]               NA   0.902      NA      NA   0.853      NA   0.771
+01_Jan-Dec           (3,5]            0.757      NA      NA      NA      NA   0.792   0.848
+02_Feb-Mar-Apr-May   (-5,-2]             NA      NA      NA      NA   0.693      NA      NA
+02_Feb-Mar-Apr-May   (-2,-1]          0.593   0.651   0.761   0.794   0.784   0.699   0.697
+02_Feb-Mar-Apr-May   (-1,0]           0.638   0.746   0.832   0.834   0.794   0.743   0.758
+02_Feb-Mar-Apr-May   (0,1]            0.643   0.788   0.857   0.864   0.816   0.798   0.798
+02_Feb-Mar-Apr-May   (1,2]            0.791   0.838   0.896   0.891   0.823   0.871   0.901
+02_Feb-Mar-Apr-May   (2,3]            0.681   0.868      NA      NA      NA   0.779   0.861
+02_Feb-Mar-Apr-May   (3,5]               NA      NA   0.877   0.899   0.838      NA      NA
+03_Jun               (-5,-2]             NA      NA   0.826      NA      NA      NA      NA
+03_Jun               (-2,-1]          0.704   0.877   0.945   0.951      NA      NA   0.830
+03_Jun               (-1,0]           0.755   0.826   0.939   0.915   0.886   0.823   0.859
+03_Jun               (0,1]            0.759   0.891   0.934   0.937   0.835   0.865   0.843
+03_Jun               (1,2]            0.753   0.880   0.926   0.967   0.957   0.918   0.905
+03_Jun               (2,3]            0.834      NA      NA   0.966   0.928   0.956   0.971
+04_Jul-Aug-Sep       (-2,-1]          0.705   0.583   0.724   0.688   0.724   0.829   0.900
+04_Jul-Aug-Sep       (-1,0]           0.767   0.844   0.906   0.920   0.877   0.893   0.920
+04_Jul-Aug-Sep       (0,1]            0.776   0.891   0.932   0.928   0.886   0.870   0.922
+04_Jul-Aug-Sep       (1,2]            0.760   0.885   0.923   0.931      NA   0.890   0.938
+04_Jul-Aug-Sep       (2,3]            0.824   0.947   0.975   0.972      NA      NA   0.897
+04_Jul-Aug-Sep       (3,5]            0.843      NA      NA      NA   0.958      NA      NA
+05_Oct               (-5,-2]             NA      NA      NA   0.666      NA      NA   0.699
+05_Oct               (-2,-1]          0.744   0.838   0.894   0.919   0.843   0.771   0.835
+05_Oct               (-1,0]           0.743   0.824   0.885   0.903   0.860   0.871   0.927
+05_Oct               (0,1]            0.755   0.868   0.905   0.922   0.892   0.850   0.895
+05_Oct               (1,2]            0.806   0.903   0.945   0.934   0.873   0.894   0.937
+05_Oct               (2,3]               NA      NA      NA      NA   0.923      NA      NA
+06_Nov               (-2,-1]          0.516   0.624   0.520   0.531   0.627   0.670   0.616
+06_Nov               (-1,0]           0.577   0.627   0.802   0.834   0.770   0.682   0.668
+06_Nov               (0,1]            0.699   0.806   0.901   0.914   0.843   0.742   0.818
+06_Nov               (1,2]            0.717   0.886   0.954   0.943   0.906   0.825   0.890
+06_Nov               (2,3]               NA      NA      NA      NA      NA      NA   0.857
+
+```r
+# combine the tables
+tk2oak_c_2 <- bind_rows(tk2oak_a_2, tk2oak_b_2) %>%
+  complete(sfzgroup1_cat, season1) %>%
+  arrange(season1)
+
+tk2oak_c_2 %>%
+  kable(digits=c(1,rep(3,8)), format.args = list(big.mark = ","))
+```
+
+
+
+sfzgroup1_cat   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat
+--------------  -------------------  ------  ------  ------  ------  ------  ------  ------
+(-1,0]          01_Jan-Dec            0.551   0.687   0.725   0.724   0.659   0.605   0.629
+(-2,-1]         01_Jan-Dec            0.554   0.554   0.555   0.566   0.589   0.596   0.604
+(-5,-2]         01_Jan-Dec               NA      NA      NA      NA      NA      NA      NA
+(0,1]           01_Jan-Dec            0.573   0.679   0.798   0.816   0.745   0.644   0.688
+(1,2]           01_Jan-Dec            0.645   0.803   0.860   0.868   0.831      NA   0.629
+(2,3]           01_Jan-Dec               NA   0.902      NA      NA   0.853      NA   0.771
+(3,5]           01_Jan-Dec            0.757      NA      NA      NA      NA   0.792   0.848
+allcats         01_Jan-Dec            0.573   0.677   0.725   0.738   0.695   0.630   0.661
+(-1,0]          02_Feb-Mar-Apr-May    0.638   0.746   0.832   0.834   0.794   0.743   0.758
+(-2,-1]         02_Feb-Mar-Apr-May    0.593   0.651   0.761   0.794   0.784   0.699   0.697
+(-5,-2]         02_Feb-Mar-Apr-May       NA      NA      NA      NA   0.693      NA      NA
+(0,1]           02_Feb-Mar-Apr-May    0.643   0.788   0.857   0.864   0.816   0.798   0.798
+(1,2]           02_Feb-Mar-Apr-May    0.791   0.838   0.896   0.891   0.823   0.871   0.901
+(2,3]           02_Feb-Mar-Apr-May    0.681   0.868      NA      NA      NA   0.779   0.861
+(3,5]           02_Feb-Mar-Apr-May       NA      NA   0.877   0.899   0.838      NA      NA
+allcats         02_Feb-Mar-Apr-May    0.647   0.762   0.841   0.849   0.802   0.757   0.774
+(-1,0]          03_Jun                0.755   0.826   0.939   0.915   0.886   0.823   0.859
+(-2,-1]         03_Jun                0.704   0.877   0.945   0.951      NA      NA   0.830
+(-5,-2]         03_Jun                   NA      NA   0.826      NA      NA      NA      NA
+(0,1]           03_Jun                0.759   0.891   0.934   0.937   0.835   0.865   0.843
+(1,2]           03_Jun                0.753   0.880   0.926   0.967   0.957   0.918   0.905
+(2,3]           03_Jun                0.834      NA      NA   0.966   0.928   0.956   0.971
+(3,5]           03_Jun                   NA      NA      NA      NA      NA      NA      NA
+allcats         03_Jun                0.757   0.876   0.926   0.937   0.895   0.847   0.868
+(-1,0]          04_Jul-Aug-Sep        0.767   0.844   0.906   0.920   0.877   0.893   0.920
+(-2,-1]         04_Jul-Aug-Sep        0.705   0.583   0.724   0.688   0.724   0.829   0.900
+(-5,-2]         04_Jul-Aug-Sep           NA      NA      NA      NA      NA      NA      NA
+(0,1]           04_Jul-Aug-Sep        0.776   0.891   0.932   0.928   0.886   0.870   0.922
+(1,2]           04_Jul-Aug-Sep        0.760   0.885   0.923   0.931      NA   0.890   0.938
+(2,3]           04_Jul-Aug-Sep        0.824   0.947   0.975   0.972      NA      NA   0.897
+(3,5]           04_Jul-Aug-Sep        0.843      NA      NA      NA   0.958      NA      NA
+allcats         04_Jul-Aug-Sep        0.769   0.847   0.900   0.904   0.873   0.871   0.916
+(-1,0]          05_Oct                0.743   0.824   0.885   0.903   0.860   0.871   0.927
+(-2,-1]         05_Oct                0.744   0.838   0.894   0.919   0.843   0.771   0.835
+(-5,-2]         05_Oct                   NA      NA      NA   0.666      NA      NA   0.699
+(0,1]           05_Oct                0.755   0.868   0.905   0.922   0.892   0.850   0.895
+(1,2]           05_Oct                0.806   0.903   0.945   0.934   0.873   0.894   0.937
+(2,3]           05_Oct                   NA      NA      NA      NA   0.923      NA      NA
+(3,5]           05_Oct                   NA      NA      NA      NA      NA      NA      NA
+allcats         05_Oct                0.755   0.848   0.900   0.902   0.869   0.851   0.892
+(-1,0]          06_Nov                0.577   0.627   0.802   0.834   0.770   0.682   0.668
+(-2,-1]         06_Nov                0.516   0.624   0.520   0.531   0.627   0.670   0.616
+(-5,-2]         06_Nov                   NA      NA      NA      NA      NA      NA      NA
+(0,1]           06_Nov                0.699   0.806   0.901   0.914   0.843   0.742   0.818
+(1,2]           06_Nov                0.717   0.886   0.954   0.943   0.906   0.825   0.890
+(2,3]           06_Nov                   NA      NA      NA      NA      NA      NA   0.857
+(3,5]           06_Nov                   NA      NA      NA      NA      NA      NA      NA
+allcats         06_Nov                0.622   0.746   0.797   0.810   0.779   0.716   0.728
+
+```r
+# report frequency in each category
+tk2oak_b_2_freq <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfzgroup1_cat))) %>%
+  group_by(season1, wday, sfzgroup1_cat) %>%
+  summarise (n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  select(-n) %>%
+  spread(wday, freq, fill=0) 
+
+tk2oak_b_2_freq %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE)) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+```
+
+
+
+season1              sfzgroup1_cat      Sun     Mon    Tues     Wed   Thurs     Fri     Sat    mean
+-------------------  --------------  ------  ------  ------  ------  ------  ------  ------  ------
+01_Jan-Dec           (-2,-1]          0.161   0.281   0.273   0.290   0.258   0.138   0.133   0.219
+01_Jan-Dec           (-1,0]           0.452   0.312   0.242   0.161   0.258   0.448   0.367   0.320
+01_Jan-Dec           (0,1]            0.258   0.188   0.303   0.355   0.355   0.345   0.400   0.315
+01_Jan-Dec           (1,2]            0.097   0.188   0.182   0.194   0.065   0.000   0.033   0.108
+01_Jan-Dec           (2,3]            0.000   0.031   0.000   0.000   0.065   0.000   0.033   0.018
+01_Jan-Dec           (3,5]            0.032   0.000   0.000   0.000   0.000   0.069   0.033   0.019
+02_Feb-Mar-Apr-May   (-5,-2]          0.000   0.000   0.000   0.000   0.019   0.000   0.000   0.003
+02_Feb-Mar-Apr-May   (-2,-1]          0.096   0.157   0.157   0.096   0.077   0.096   0.078   0.108
+02_Feb-Mar-Apr-May   (-1,0]           0.442   0.333   0.333   0.423   0.481   0.615   0.627   0.465
+02_Feb-Mar-Apr-May   (0,1]            0.327   0.333   0.314   0.327   0.308   0.154   0.176   0.277
+02_Feb-Mar-Apr-May   (1,2]            0.058   0.157   0.176   0.135   0.096   0.058   0.039   0.103
+02_Feb-Mar-Apr-May   (2,3]            0.077   0.020   0.000   0.000   0.000   0.077   0.078   0.036
+02_Feb-Mar-Apr-May   (3,5]            0.000   0.000   0.020   0.019   0.019   0.000   0.000   0.008
+03_Jun               (-5,-2]          0.000   0.000   0.077   0.000   0.000   0.000   0.000   0.011
+03_Jun               (-2,-1]          0.077   0.154   0.077   0.167   0.000   0.000   0.071   0.078
+03_Jun               (-1,0]           0.462   0.154   0.231   0.333   0.667   0.692   0.500   0.434
+03_Jun               (0,1]            0.077   0.462   0.462   0.333   0.083   0.154   0.214   0.255
+03_Jun               (1,2]            0.308   0.231   0.154   0.083   0.083   0.077   0.143   0.154
+03_Jun               (2,3]            0.077   0.000   0.000   0.083   0.167   0.077   0.071   0.068
+04_Jul-Aug-Sep       (-2,-1]          0.077   0.077   0.103   0.100   0.077   0.205   0.179   0.117
+04_Jul-Aug-Sep       (-1,0]           0.590   0.487   0.462   0.500   0.513   0.308   0.410   0.467
+04_Jul-Aug-Sep       (0,1]            0.179   0.256   0.231   0.250   0.359   0.385   0.282   0.277
+04_Jul-Aug-Sep       (1,2]            0.077   0.128   0.154   0.075   0.000   0.103   0.051   0.084
+04_Jul-Aug-Sep       (2,3]            0.026   0.051   0.051   0.075   0.000   0.000   0.077   0.040
+04_Jul-Aug-Sep       (3,5]            0.051   0.000   0.000   0.000   0.051   0.000   0.000   0.015
+05_Oct               (-5,-2]          0.000   0.000   0.000   0.056   0.000   0.000   0.059   0.016
+05_Oct               (-2,-1]          0.067   0.062   0.059   0.056   0.167   0.176   0.059   0.092
+05_Oct               (-1,0]           0.467   0.562   0.588   0.444   0.500   0.353   0.294   0.458
+05_Oct               (0,1]            0.333   0.188   0.176   0.222   0.111   0.294   0.529   0.265
+05_Oct               (1,2]            0.133   0.188   0.176   0.222   0.111   0.176   0.059   0.152
+05_Oct               (2,3]            0.000   0.000   0.000   0.000   0.111   0.000   0.000   0.016
+06_Nov               (-2,-1]          0.111   0.176   0.250   0.250   0.235   0.222   0.167   0.202
+06_Nov               (-1,0]           0.500   0.235   0.125   0.125   0.235   0.389   0.444   0.293
+06_Nov               (0,1]            0.167   0.412   0.562   0.562   0.471   0.222   0.222   0.374
+06_Nov               (1,2]            0.222   0.176   0.062   0.062   0.059   0.167   0.111   0.123
+06_Nov               (2,3]            0.000   0.000   0.000   0.000   0.000   0.000   0.056   0.008
+
+Compare as ratio to mean for that season-wday
+
+```r
+tk2oak_d_2 <- tk2oak_c_2 %>%
+  group_by(season1) %>%
+  mutate_each(funs(value = ./.[sfzgroup1_cat == "allcats"]), -sfzgroup1_cat, -season1) %>%
+  ungroup()
+
+# calculate a mean of the weekdays across each row, removing NAs
+tk2oak_e_2 <- tk2oak_d_2 %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE))
+
+tk2oak_e_2 %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+```
+
+
+
+sfzgroup1_cat   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat    mean
+--------------  -------------------  ------  ------  ------  ------  ------  ------  ------  ------
+(-1,0]          01_Jan-Dec            0.961   1.016   1.000   0.981   0.948   0.960   0.951   0.974
+(-2,-1]         01_Jan-Dec            0.967   0.819   0.766   0.766   0.847   0.946   0.914   0.861
+(-5,-2]         01_Jan-Dec               NA      NA      NA      NA      NA      NA      NA     NaN
+(0,1]           01_Jan-Dec            1.001   1.003   1.100   1.105   1.072   1.023   1.041   1.049
+(1,2]           01_Jan-Dec            1.125   1.186   1.186   1.175   1.196      NA   0.951   1.137
+(2,3]           01_Jan-Dec               NA   1.333      NA      NA   1.227      NA   1.166   1.242
+(3,5]           01_Jan-Dec            1.322      NA      NA      NA      NA   1.257   1.283   1.287
+allcats         01_Jan-Dec            1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(-1,0]          02_Feb-Mar-Apr-May    0.985   0.979   0.989   0.983   0.991   0.981   0.979   0.984
+(-2,-1]         02_Feb-Mar-Apr-May    0.916   0.855   0.906   0.935   0.978   0.923   0.901   0.916
+(-5,-2]         02_Feb-Mar-Apr-May       NA      NA      NA      NA   0.864      NA      NA   0.864
+(0,1]           02_Feb-Mar-Apr-May    0.993   1.034   1.019   1.018   1.017   1.054   1.031   1.024
+(1,2]           02_Feb-Mar-Apr-May    1.223   1.100   1.066   1.049   1.027   1.150   1.165   1.111
+(2,3]           02_Feb-Mar-Apr-May    1.053   1.139      NA      NA      NA   1.028   1.113   1.083
+(3,5]           02_Feb-Mar-Apr-May       NA      NA   1.043   1.059   1.046      NA      NA   1.049
+allcats         02_Feb-Mar-Apr-May    1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(-1,0]          03_Jun                0.997   0.943   1.014   0.977   0.990   0.972   0.989   0.983
+(-2,-1]         03_Jun                0.931   1.001   1.020   1.015      NA      NA   0.956   0.984
+(-5,-2]         03_Jun                   NA      NA   0.891      NA      NA      NA      NA   0.891
+(0,1]           03_Jun                1.003   1.017   1.008   1.000   0.934   1.021   0.971   0.993
+(1,2]           03_Jun                0.995   1.004   1.000   1.032   1.069   1.084   1.043   1.033
+(2,3]           03_Jun                1.102      NA      NA   1.031   1.038   1.129   1.118   1.084
+(3,5]           03_Jun                   NA      NA      NA      NA      NA      NA      NA     NaN
+allcats         03_Jun                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(-1,0]          04_Jul-Aug-Sep        0.998   0.997   1.007   1.018   1.005   1.025   1.004   1.008
+(-2,-1]         04_Jul-Aug-Sep        0.918   0.688   0.805   0.762   0.830   0.952   0.982   0.848
+(-5,-2]         04_Jul-Aug-Sep           NA      NA      NA      NA      NA      NA      NA     NaN
+(0,1]           04_Jul-Aug-Sep        1.010   1.052   1.036   1.027   1.015   0.999   1.006   1.021
+(1,2]           04_Jul-Aug-Sep        0.988   1.046   1.026   1.030      NA   1.022   1.024   1.023
+(2,3]           04_Jul-Aug-Sep        1.072   1.119   1.084   1.075      NA      NA   0.979   1.066
+(3,5]           04_Jul-Aug-Sep        1.097      NA      NA      NA   1.098      NA      NA   1.097
+allcats         04_Jul-Aug-Sep        1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(-1,0]          05_Oct                0.983   0.972   0.984   1.001   0.990   1.023   1.039   0.999
+(-2,-1]         05_Oct                0.986   0.988   0.994   1.018   0.970   0.906   0.937   0.971
+(-5,-2]         05_Oct                   NA      NA      NA   0.739      NA      NA   0.783   0.761
+(0,1]           05_Oct                0.999   1.023   1.006   1.022   1.026   0.999   1.004   1.011
+(1,2]           05_Oct                1.067   1.065   1.051   1.036   1.004   1.050   1.050   1.046
+(2,3]           05_Oct                   NA      NA      NA      NA   1.062      NA      NA   1.062
+(3,5]           05_Oct                   NA      NA      NA      NA      NA      NA      NA     NaN
+allcats         05_Oct                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+(-1,0]          06_Nov                0.928   0.840   1.007   1.030   0.989   0.952   0.917   0.952
+(-2,-1]         06_Nov                0.830   0.837   0.653   0.656   0.805   0.935   0.846   0.795
+(-5,-2]         06_Nov                   NA      NA      NA      NA      NA      NA      NA     NaN
+(0,1]           06_Nov                1.124   1.080   1.131   1.128   1.082   1.036   1.124   1.101
+(1,2]           06_Nov                1.154   1.188   1.197   1.165   1.163   1.152   1.223   1.177
+(2,3]           06_Nov                   NA      NA      NA      NA      NA      NA   1.178   1.178
+(3,5]           06_Nov                   NA      NA      NA      NA      NA      NA      NA     NaN
+allcats         06_Nov                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000

@@ -23,7 +23,6 @@ library(ggplot2)
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
 ```{r}
 
 fpath <- c("~/Project/R projects/sf_2016/") 
@@ -36,7 +35,9 @@ load(file=paste0(fpath,"output_data/str_daily.Rdata"))
 
 ```
 
-Create a simple set of dates and days of week
+# I. Set up data  
+
+Create a simple set of dates and days of week  
 ```{r}
 
 date <- seq(as.Date("1970-01-01"), as.Date("2030-01-01"), by = 1)
@@ -52,14 +53,13 @@ date_df <- df %>%
 
 ```
 
-Join the simple date info onto the STR data
+Join the simple date info onto the STR data  
 ```{r}
 
 str_daily_1 <- str_daily %>%
   left_join(date_df, by="date")  
 
 ```
-
 
 Create seasonal categories
 ```{r}
@@ -87,7 +87,6 @@ str_daily_2 <- str_daily_1 %>%
   
 ```
 
-
 How much data do we have for each geography in the total segment?
 ```{r}
 
@@ -101,7 +100,7 @@ str_daily_2 %>%
 
 ```
 
-
+### Define some categories
 Define some occupancy categories
 ```{r}
        
@@ -113,28 +112,55 @@ sfocccat1 <- str_daily_2 %>%
   mutate(sfocccat1 = cut(occ, c(0,.7,.8,.9,.95,1))) %>%
   select(date, sfocccat1)
 
-# typical sf occupancy by season and wday
+#######
+#
+# typical occupancy by season and wday
+
+# sf
 typocc <- str_daily_2 %>%
   filter(geo_ttl == "sfcity") %>%
   filter(seg == "total") %>%
   filter(date >= as.Date("2011-01-01") & date <= as.Date("2015-12-31")) %>%
   group_by(geo_ttl, season1, wday) %>%
-  summarize(mocc1 = mean(occ)) %>%
+  summarize(sfmocc1 = mean(occ),
+            sfsdocc1 = sd(occ),
+            sfnocc1 = n()) %>%
   ungroup() %>%
   select(-geo_ttl)
 
-# work with the segment data
+# oak
+typocc_oak <- str_daily_2 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(date >= as.Date("2011-01-01") & date <= as.Date("2015-12-31")) %>%
+  group_by(geo_ttl, season1, wday) %>%
+  summarize(oakmocc1 = mean(occ),
+            oaksdocc1 = sd(occ),
+            oaknocc1 = n()) %>%
+  ungroup() %>%
+  select(-geo_ttl)
+
+########
+#
+# typical group occupancy
+
+# sf
 typocc_group <- str_daily_2 %>%
   filter(geo_ttl == "sfcity") %>%
   filter(seg == "group") %>%
   filter(date >= as.Date("2011-01-01") & date <= as.Date("2015-12-31")) %>%
   filter(!(is.na(occ))) %>%
   group_by(season1, wday) %>%
-  summarize(mgroup1 = mean(occ)) %>%
+  summarize(sfmgroup1 = mean(occ),
+            sfsdgroup1 = sd(occ)) %>%
   ungroup() %>%
-  select(season1, wday, mgroup1)
+  select(season1, wday, sfmgroup1, sfsdgroup1)
 
-# sf group 
+########
+#
+# group categories
+
+# sf 
 sfgroupcat1 <- str_daily_2 %>%
   filter(geo_ttl == "sfcity") %>%
   filter(seg == "group") %>%
@@ -151,37 +177,72 @@ Join on these various new columns
 str_daily_3 <- str_daily_2 %>%
   left_join(sfocccat1, by=c("date")) %>%
   left_join(typocc, by=c("season1", "wday")) %>%
+  left_join(typocc_oak, by=c("season1", "wday")) %>%
   left_join(typocc_group, by=c("season1", "wday")) %>%
   left_join(sfgroupcat1, by=c("date"))
-  
 
+```
 
+Using some of these new columns, calculate some additional measures to join
+```{r}
 
+# how does total occupancy for sf compare to its season1-wday mean, 
+# output a list of dates with the results for those days
+
+tempsf_a <- str_daily_3 %>%
+  filter(geo_ttl == "sfcity") %>%
+  filter(seg == "total") %>%
+  mutate(sfzocc1 = (occ-sfmocc1)/sfsdocc1) %>%
+  select(date, sfzocc1)
+
+# similar but for group occupancy
+tempsf_b <- str_daily_3 %>%
+  filter(geo_ttl == "sfcity") %>%
+  filter(seg == "group") %>%
+  mutate(sfzgroup1 = (occ-sfmgroup1)/sfsdgroup1) %>%
+  select(date, sfzgroup1)
+
+# similar but for oak
+tempoak_a <- str_daily_3 %>%
+  filter(geo_ttl == "sfcity") %>%
+  filter(seg == "total") %>%
+  mutate(oakzocc1 = (occ-oakmocc1)/oaksdocc1) %>%
+  select(date, oakzocc1)
+
+# join them on
+str_daily_4 <- str_daily_3 %>%
+  left_join(tempsf_a, by=c("date")) %>%
+  left_join(tempsf_b, by=c("date")) %>%
+  left_join(tempoak_a, by=c("date")) %>%
+  # calculate a few categories
+  mutate(sfzocc1_cat = cut(sfzocc1, c(-5,-2,-1,0,1,2,2.5))) %>%
+  mutate(sfzgroup1_cat = cut(sfzgroup1, c(-5,-2,-1,0,1,2,3,5)))
 
 ```
 
 
-# Data limitations
+
+### Data limitations
 Looks like for SF City, we could do full year comparisons from 2011 to 2015. When we do comparisons with other geographies, we should do 2012 to 2015.  
 The segmentation data for SF City is missing from 1/10/14 to 9/30/14.  
 
 ```{r}
 
-dsfcity_seg <- str_daily_3 %>%
+dsfcity_seg <- str_daily_4 %>%
   filter(geo_ttl == "sfcity") %>%
   filter(date >= as.Date("2011-01-01") & date <= as.Date("2015-12-31"))
 
-dsfcity_1 <- str_daily_3 %>%
+dsfcity_1 <- str_daily_4 %>%
   filter(seg == "total") %>%
   filter(geo_ttl == "sfcity") %>%
   filter(date >= as.Date("2011-01-01") & date <= as.Date("2015-12-31"))
 
-doaksf_1 <- str_daily_3 %>%
+doaksf_1 <- str_daily_4 %>%
   filter(seg == "total") %>%
   filter(geo_ttl %in% c("sfcity", "oak")) %>%
   filter(date >= as.Date("2012-01-01") & date <= as.Date("2015-12-31"))
 
-doaksf_seg <- str_daily_3 %>%
+doaksf_seg <- str_daily_4 %>%
   filter(geo_ttl %in% c("sfcity", "oak")) %>%
   filter(date >= as.Date("2012-01-01") & date <= as.Date("2015-12-31"))
 
@@ -192,9 +253,7 @@ doaksf_seg_1 <- doaksf_seg %>%
 
 ```
 
-
-
-## Frequency: Occupancy categories
+# II. Frequency: Occupancy categories
 
 Frequency of occupancy categories overall
 ```{r}
@@ -329,7 +388,7 @@ dsfcity_1 %>%
   select(-n) %>%
   # spread, but replace NA with 0
   spread(wday, freq, fill=0) %>%
-  kable(digits=c(0,0,0,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(0,0,0,rep(3,9)), format.args = list(big.mark = ","))
 
 dsfcity_1 %>%
   group_by(season1, yeargp, wday, sfocccat1) %>%
@@ -337,12 +396,11 @@ dsfcity_1 %>%
   ungroup() %>%
   # spread, but replace NA with 0
   spread(wday, n, fill=0) %>%
-  kable(digits=c(0,0,0,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(0,0,0,rep(3,9)), format.args = list(big.mark = ","))
 
 ```
 
-
-## Average occupancy by month, etc.
+# III. Average occupancy by month, etc.
 
 Average occupancy by month, wday
 ```{r}
@@ -352,7 +410,7 @@ dsfcity_1 %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
   spread(wday, occ) %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 ```
 
@@ -364,7 +422,7 @@ dsfcity_1 %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
   spread(wday, occ) %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 
 ```
@@ -377,7 +435,7 @@ dsfcity_1 %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
   spread(wday, occ) %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 
 ```
@@ -395,9 +453,11 @@ dsfcity_1 %>%
 
 ```
 
-# Surrounding areas
+# IV. Oak daily as related to SF
 
-## Initial explorations
+Remember, SF segmentation data is missing from 1/10/14 to 9/30/14.   
+
+Initial explorations  
 ```{r}
 
 doaksf_1 %>%
@@ -408,7 +468,7 @@ doaksf_1 %>%
 
 ```
 
-With segment info 
+With segment info   
 ```{r}
 
 doaksf_seg_1 %>%
@@ -420,20 +480,19 @@ doaksf_seg_1 %>%
 
 ```
 
-## Oak daily as related to SF
-Remember, SF segmentation data is missing from 1/10/14 to 9/30/14.  
-
-### Occupancy grouped by SF-based categories
-Take a look at what Oak occupancy looks like grouped by some of these SF-based categories.  
-
+## IV.A. Occupancy impact to Oak grouped by SF-based categories: _Initial approach_
+This initial approach is based on the simple occupancy categories for SF, rather than z-scores)  
+  
 ******
-Grouped by SF occupancy category  
+### Grouped by SF occupancy category
+Take a look at what Oak occupancy looks like grouped by some of these SF-based categories.  
 
 Overall (so what is oak occupancy, without regard to SF occupancy)
 ```{r}
 
 gpoak_a <- doaksf_seg_1 %>%
   filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
   group_by(season1, wday) %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
@@ -442,12 +501,9 @@ gpoak_a <- doaksf_seg_1 %>%
   select(sfocccat1, everything())
 
 gpoak_a %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
-```
-
-```{r}
-
+# mean by category
 gpoak_b <- doaksf_seg_1 %>%
   filter(geo_ttl == "oak") %>%
   group_by(sfocccat1, season1, wday) %>%
@@ -456,20 +512,36 @@ gpoak_b <- doaksf_seg_1 %>%
   spread(wday, occ) 
 
 gpoak_b %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
-```
-
-Combine the tables
-```{r}
-
-gpoak_c <- bind_rows(gpoak_a, gpoak_b)
+#  combine the tables
+gpoak_c <- bind_rows(gpoak_a, gpoak_b) %>%
+  tidyr::complete(sfocccat1, season1) %>%
+  arrange(season1) 
 
 gpoak_c %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+
+# report frequency in each category
+gpoak_b_freq <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfocccat1))) %>%
+  group_by(season1, wday, sfocccat1) %>%
+  summarise (n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  select(-n) %>%
+  spread(wday, freq, fill=0) 
+
+gpoak_b_freq %>%
+  select(sfocccat1, everything()) %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE)) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 ```
 
+Compare as ratio to mean for that season-wday
 ```{r}
 
 gpoak_d <- gpoak_c %>%
@@ -482,18 +554,19 @@ gpoak_e <- gpoak_d %>%
   mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE))
 
 gpoak_e %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 ```
 
 ******
-Grouped by SF group occupancy contribution
+### Grouped by SF group occupancy contribution
 
-Overall (so what is oak occupancy, without regard to SF occupancy)
 ```{r}
 
+# Overall (so what is oak occupancy, without regard to SF occupancy)
 gpoak_a_2 <- doaksf_seg_1 %>%
   filter(geo_ttl == "oak") %>%
+  filter(!(is.na(sfgroupcat1))) %>%
   group_by(season1, wday) %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
@@ -502,52 +575,242 @@ gpoak_a_2 <- doaksf_seg_1 %>%
   select(sfgroupcat1, everything())
 
 gpoak_a_2 %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
-```
-
-```{r}
-
+# mean by categories
 gpoak_b_2 <- doaksf_seg_1 %>%
   filter(geo_ttl == "oak") %>%
+  filter(!(is.na(sfgroupcat1))) %>%
   group_by(sfgroupcat1, season1, wday) %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
   spread(wday, occ) 
 
 gpoak_b_2 %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
-```
-
-Combine the tables
-```{r}
-
-gpoak_c_2 <- bind_rows(gpoak_a_2, gpoak_b_2)
+# combine the tables
+gpoak_c_2 <- bind_rows(gpoak_a_2, gpoak_b_2) %>%
+  # complete fills in the missing combinations because otherwise
+  # there are some categories that are missing (dropped in the summarize step)
+  tidyr::complete(sfgroupcat1, season1) %>%
+  arrange(season1) 
 
 gpoak_c_2 %>%
-  kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+
+# report frequency in each category
+gpoak_b_2_freq <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfgroupcat1))) %>%
+  group_by(season1, wday, sfgroupcat1) %>%
+  summarise (n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  select(-n) %>%
+  spread(wday, freq, fill=0) 
+
+gpoak_b_2_freq %>%
+  select(sfgroupcat1, everything()) %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE)) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 ```
 
+Compare as ratio to mean for that season-wday
 ```{r}
-# following doesn't work because the Jun season (and maybe others) are missing from
-# at least one of the category groupings
 
-# gpoak_d_2 <- gpoak_c_2 %>%
-#   group_by(season1) %>%
-#   mutate_each(funs(value = ./.[sfgroupcat1 == "allcats"]), -sfgroupcat1, -season1) %>%
-#   ungroup()
-# 
-# # calculate a mean of the weekdays across each row, removing NAs
-# gpoak_e_2 <- gpoak_d_2 %>% 
-#   mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE))
-# 
-# gpoak_e_2 %>%
-#   kable(digits=c(1,rep(3,7)), format.args = list(big.mark = ","))
+gpoak_d_2 <- gpoak_c_2 %>%
+  group_by(season1) %>%
+  mutate_each(funs(value = ./.[sfgroupcat1 == "allcats"]), -sfgroupcat1, -season1) %>%
+  ungroup()
+
+# calculate a mean of the weekdays across each row, removing NAs
+gpoak_e_2 <- gpoak_d_2 %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE))
+
+gpoak_e_2 %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 ```
 
-### Occupancy grouped by SF-based categories - modified approach
-After discussing with Anthony, the suggestion 
+## IV.B. Occupancy impact to Oak grouped by SF-based categories: _Modified approach_
+This initial approach is based on z-scores of various occupancy measures in SF
 
+After discussing with Anthony, the suggestion was to look at days when SF occupancy is a standard deviation above its average, and whether Oakland is also
+
+Graph of occupancy z-scores (number of standard deviations above or below mean)
+```{r}
+
+doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  ggplot(aes(x=sfzocc1, y=oakzocc1)) +
+  geom_point()
+  
+```
+
+
+******
+### Grouped by SF total occupancy (using z-score)  
+Oakland occupancy during various sf occupancy categories based on z-score of total occupancy
+```{r}
+# mean occupancy in all categories
+tk2oak_a <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  group_by(season1, wday) %>%
+  summarise (occ = mean(occ)) %>%
+  ungroup() %>%
+  spread(wday, occ) %>%
+  mutate(sfzocc1_cat = "allcats") %>%
+  select(sfzocc1_cat, everything())
+
+tk2oak_a %>%
+  kable(digits=c(1,rep(3,8)), format.args = list(big.mark = ","))
+
+# mean occupancy by categories
+tk2oak_b <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  group_by(season1, wday, sfzocc1_cat) %>%
+  summarise (occ = mean(occ)) %>%
+  ungroup() %>%
+  spread(wday, occ) 
+
+tk2oak_b %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+
+# combine the tables
+tk2oak_c <- bind_rows(tk2oak_a, tk2oak_b) %>%
+  complete(sfzocc1_cat, season1) %>%
+  arrange(season1)
+
+tk2oak_c %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+
+# report frequency in each category
+tk2oak_b_freq <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfzocc1_cat))) %>%
+  group_by(season1, wday, sfzocc1_cat) %>%
+  summarise (n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  select(-n) %>%
+  spread(wday, freq, fill=0) 
+
+tk2oak_b_freq %>%
+  select(sfzocc1_cat, everything()) %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE)) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+
+```
+
+Compare as ratio to mean for that season-wday
+```{r}
+
+tk2oak_d <- tk2oak_c %>%
+  group_by(season1) %>%
+  mutate_each(funs(value = ./.[sfzocc1_cat == "allcats"]), -sfzocc1_cat, -season1) %>%
+  ungroup()
+
+# calculate a mean of the weekdays across each row, removing NAs
+tk2oak_e <- tk2oak_d %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE))
+
+tk2oak_e %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+
+```
+
+
+Graph of occupancy z-scores (group for sf, total for oak). I think the striations come from the fact that we've calculated a z-score relative to 42 different category means for each. So dates that fit in a certain season-wday are being divided by the same number, and maybe the relationship between those two numbers (sf and oak) stays as a consistent underlying pattern).
+```{r}
+
+doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  ggplot(aes(x=sfzgroup1, y=oakzocc1)) +
+  geom_point()
+  
+```
+
+
+******
+### Grouped by SF group occupancy (using z-score)  
+
+Oakland occupancy during various sf group demand categories based on z-score of group occupancy. The NAs in sfzgroup1_cat are days when we don't have SF group data. I decided to drop them so that the relative frequency would make sense.
+```{r}
+# mean occupancy in all categories
+tk2oak_a_2 <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfzgroup1_cat))) %>%
+  group_by(season1, wday) %>%
+  summarise (occ = mean(occ)) %>%
+  ungroup() %>%
+  spread(wday, occ) %>%
+  mutate(sfzgroup1_cat = "allcats") %>%
+  select(sfzgroup1_cat, everything())
+
+tk2oak_a_2 %>%
+  kable(digits=c(1,rep(3,8)), format.args = list(big.mark = ","))
+
+# mean occupancy by categories
+tk2oak_b_2 <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfzgroup1_cat))) %>%
+  group_by(season1, wday, sfzgroup1_cat) %>%
+  summarise (occ = mean(occ)) %>%
+  ungroup() %>%
+  spread(wday, occ) 
+
+tk2oak_b_2 %>%
+  kable(digits=c(1,rep(3,8)), format.args = list(big.mark = ","))
+
+# combine the tables
+tk2oak_c_2 <- bind_rows(tk2oak_a_2, tk2oak_b_2) %>%
+  complete(sfzgroup1_cat, season1) %>%
+  arrange(season1)
+
+tk2oak_c_2 %>%
+  kable(digits=c(1,rep(3,8)), format.args = list(big.mark = ","))
+
+# report frequency in each category
+tk2oak_b_2_freq <- doaksf_seg_1 %>%
+  filter(geo_ttl == "oak") %>%
+  filter(seg == "total") %>%
+  filter(!(is.na(sfzgroup1_cat))) %>%
+  group_by(season1, wday, sfzgroup1_cat) %>%
+  summarise (n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  select(-n) %>%
+  spread(wday, freq, fill=0) 
+
+tk2oak_b_2_freq %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE)) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+
+```
+
+Compare as ratio to mean for that season-wday
+```{r}
+
+tk2oak_d_2 <- tk2oak_c_2 %>%
+  group_by(season1) %>%
+  mutate_each(funs(value = ./.[sfzgroup1_cat == "allcats"]), -sfzgroup1_cat, -season1) %>%
+  ungroup()
+
+# calculate a mean of the weekdays across each row, removing NAs
+tk2oak_e_2 <- tk2oak_d_2 %>%
+  mutate(mean=rowMeans(.[, sapply(., is.numeric)], na.rm=TRUE))
+
+tk2oak_e_2 %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+
+```

@@ -172,7 +172,10 @@ tb2 <- data.frame(date=time(suma), suma)%>%
   mutate(occ = demt / supt) %>%
   # adds another column
   mutate(revpar = rmrevt / supt) %>%
-  mutate(adr = rmrevt / demt)
+  mutate(adr = rmrevt / demt) %>%
+  # add daily
+  mutate(demd = demt/365,
+         supd = supt/365)
 
 # takes it from a tidy format and melts it, and then creates the unique
 # variable names and then reads into a zoo object spliting on the 
@@ -183,6 +186,9 @@ a <- tb2 %>%
 a$variable <- paste(a$seg, "_", a$var, sep='')
 a$seg <- NULL
 str_sftrend_a <- xts(read.zoo(a, split = 2))
+
+
+
 
 # looking at a few graphs
 autoplot.zoo(str_sftrend_a$sfcity_revpar)
