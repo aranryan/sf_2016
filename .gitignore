@@ -3,3 +3,6 @@
 .RData
 .Ruserdata
 /input_data/
+*.html
+/070_analyze_str_daily_files/
+/output_data/*.Rdata
