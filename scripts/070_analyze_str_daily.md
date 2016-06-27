@@ -1217,6 +1217,42 @@ season1              yeargp    sfocccat1         Sun       Mon      Tues       W
 06_Nov               yr14-15   (0.95,1]           NA   271.130   252.260   258.155        NA        NA   207.930
 
 
+
+Average ADR change by occupancy category
+(So this is the average ADR by year and occ category, and then the percentage change relative to the yr11-12 period as a base.)
+
+```r
+dsfcity_1 %>%
+  group_by(yeargp, sfocccat1) %>%
+  summarise (adr = mean(adr)) %>%
+  ungroup() %>%
+  complete(yeargp, sfocccat1) %>%
+  mutate(adr_chg = adr / adr[yeargp == "yr11-12"] -1) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+```
+
+
+
+yeargp    sfocccat1         adr   adr_chg
+--------  -----------  --------  --------
+yr11-12   (0,0.7]       149.138     0.000
+yr11-12   (0.7,0.8]     163.102     0.000
+yr11-12   (0.8,0.9]     179.596     0.000
+yr11-12   (0.9,0.95]    198.099     0.000
+yr11-12   (0.95,1]      220.988     0.000
+yr13      (0,0.7]       158.997     0.066
+yr13      (0.7,0.8]     180.142     0.104
+yr13      (0.8,0.9]     204.280     0.137
+yr13      (0.9,0.95]    216.603     0.093
+yr13      (0.95,1]      246.745     0.117
+yr14-15   (0,0.7]       174.285     0.169
+yr14-15   (0.7,0.8]     197.898     0.213
+yr14-15   (0.8,0.9]     225.337     0.255
+yr14-15   (0.9,0.95]    255.616     0.290
+yr14-15   (0.95,1]      282.735     0.279
+
+
+
 ## Occ and ADR
 
 
@@ -1228,7 +1264,7 @@ dsfcity_1 %>%
   geom_point()
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-25-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-26-1.png)<!-- -->
 
 # IV. Oak daily as related to SF
 
@@ -1244,7 +1280,7 @@ doaksf_1 %>%
   geom_point()
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-26-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-27-1.png)<!-- -->
 
 With segment info   
 
@@ -1261,7 +1297,7 @@ doaksf_seg %>%
 ## Warning: Removed 279 rows containing missing values (geom_point).
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-27-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-28-1.png)<!-- -->
 
 ## IV.A. Occupancy impact to Oak grouped by SF-based categories: _Initial approach_
 This initial approach is based on the simple occupancy categories for SF, rather than z-scores)  
@@ -1739,7 +1775,7 @@ doaksf_seg %>%
   geom_point()
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-32-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-33-1.png)<!-- -->
 
 
 ******
@@ -2013,7 +2049,7 @@ doaksf_seg %>%
 ## Warning: Removed 279 rows containing missing values (geom_point).
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-35-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-36-1.png)<!-- -->
 
 
 ******

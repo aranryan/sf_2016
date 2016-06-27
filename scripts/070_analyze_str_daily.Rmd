@@ -502,6 +502,23 @@ dsfcity_1 %>%
 ```
 
 
+
+Average ADR change by occupancy category
+(So this is the average ADR by year and occ category, and then the percentage change relative to the yr11-12 period as a base.)
+```{r}
+
+dsfcity_1 %>%
+  group_by(yeargp, sfocccat1) %>%
+  summarise (adr = mean(adr)) %>%
+  ungroup() %>%
+  complete(yeargp, sfocccat1) %>%
+  mutate(adr_chg = adr / adr[yeargp == "yr11-12"] -1) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+
+```
+
+
+
 ## Occ and ADR
 
 ```{r}
