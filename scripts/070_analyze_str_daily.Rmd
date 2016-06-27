@@ -246,11 +246,42 @@ doaksf_seg <- str_daily_4 %>%
   filter(geo_ttl %in% c("sfcity", "oak")) %>%
   filter(date >= as.Date("2012-01-01") & date <= as.Date("2015-12-31"))
 
-doaksf_seg_1 <- doaksf_seg %>%
-  # drop the two dates in July that are missing from the SF data
-  filter(!(date == as.Date("2015-07-26"))) %>%
-  filter(!(date == as.Date("2015-07-27")))
+# doaksf_seg_1 <- doaksf_seg %>%
+#   # drop the two dates in July that are missing from the SF data
+#   filter(!(date == as.Date("2015-07-26"))) %>%
+#   filter(!(date == as.Date("2015-07-27")))
 
+```
+
+What do we have in dsfcity_1?
+```{r}
+nrow(dsfcity_1)
+min(dsfcity_1$date)
+max(dsfcity_1$date) 
+
+# is occ blank for any rows?
+dsfcity_1 %>%
+  filter(is.na(occ)) %>%
+  nrow()
+  
+```
+
+What do we have in doaksf_seg for Oakland?
+```{r}
+
+a <- doaksf_seg %>%
+  filter(seg == "total") %>%
+  filter(geo_ttl == "oak")
+
+nrow(a)
+min(a$date)
+max(a$date) 
+
+# is occ blank for any rows?
+a %>%
+  filter(is.na(occ)) %>%
+  nrow()
+  
 ```
 
 # II. Frequency: Occupancy categories
@@ -273,6 +304,20 @@ Frequency of occupancy categories by year
 ```{r}
 dsfcity_1 %>%
   group_by(year, sfocccat1) %>%
+  summarise (n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  select(-n) %>%
+  # fill NAs with 0
+  spread(sfocccat1, freq, fill=0) %>%
+  kable(digits=c(1,rep(3,5)), format.args = list(big.mark = ","))
+
+```
+
+Frequency of occupancy categories by wday
+```{r}
+dsfcity_1 %>%
+  group_by(wday, sfocccat1) %>%
   summarise (n = n()) %>%
   mutate(freq = n / sum(n)) %>%
   ungroup() %>%
@@ -386,6 +431,7 @@ dsfcity_1 %>%
   mutate(freq = n / sum(n)) %>%
   ungroup() %>%
   select(-n) %>%
+  complete(season1, yeargp, wday, sfocccat1) %>%
   # spread, but replace NA with 0
   spread(wday, freq, fill=0) %>%
   kable(digits=c(0,0,0,rep(3,9)), format.args = list(big.mark = ","))
@@ -394,13 +440,14 @@ dsfcity_1 %>%
   group_by(season1, yeargp, wday, sfocccat1) %>%
   summarise (n = n()) %>%
   ungroup() %>%
+  complete(season1, yeargp, wday, sfocccat1) %>%
   # spread, but replace NA with 0
   spread(wday, n, fill=0) %>%
   kable(digits=c(0,0,0,rep(3,9)), format.args = list(big.mark = ","))
 
 ```
 
-# III. Average occupancy by month, etc.
+# III.A. Average occupancy by month, etc.
 
 Average occupancy by month, wday
 ```{r}
@@ -434,11 +481,25 @@ dsfcity_1 %>%
   group_by(season1, yeargp, wday, sfocccat1) %>%
   summarise (occ = mean(occ)) %>%
   ungroup() %>%
+  complete(season1, yeargp, wday, sfocccat1) %>%
   spread(wday, occ) %>%
   kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 
 ```
+
+Average ADR by season1, year group, day of week
+```{r}
+
+dsfcity_1 %>%
+  group_by(season1, yeargp, wday, sfocccat1) %>%
+  summarise (adr = mean(adr)) %>%
+  ungroup() %>%
+  spread(wday, adr) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+
+```
+
 
 ## Occ and ADR
 
@@ -471,7 +532,7 @@ doaksf_1 %>%
 With segment info   
 ```{r}
 
-doaksf_seg_1 %>%
+doaksf_seg %>%
   select(geo_ttl, seg, occ, date) %>%
   unite(geoseg, geo_ttl, seg, sep="_", remove=TRUE) %>%
   spread(geoseg, occ) %>%
@@ -490,7 +551,7 @@ Take a look at what Oak occupancy looks like grouped by some of these SF-based c
 Overall (so what is oak occupancy, without regard to SF occupancy)
 ```{r}
 
-gpoak_a <- doaksf_seg_1 %>%
+gpoak_a <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(seg == "total") %>%
   group_by(season1, wday) %>%
@@ -504,7 +565,7 @@ gpoak_a %>%
   kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 # mean by category
-gpoak_b <- doaksf_seg_1 %>%
+gpoak_b <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   group_by(sfocccat1, season1, wday) %>%
   summarise (occ = mean(occ)) %>%
@@ -523,7 +584,7 @@ gpoak_c %>%
   kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 # report frequency in each category
-gpoak_b_freq <- doaksf_seg_1 %>%
+gpoak_b_freq <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(seg == "total") %>%
   filter(!(is.na(sfocccat1))) %>%
@@ -564,7 +625,7 @@ gpoak_e %>%
 ```{r}
 
 # Overall (so what is oak occupancy, without regard to SF occupancy)
-gpoak_a_2 <- doaksf_seg_1 %>%
+gpoak_a_2 <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(!(is.na(sfgroupcat1))) %>%
   group_by(season1, wday) %>%
@@ -578,7 +639,7 @@ gpoak_a_2 %>%
   kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 # mean by categories
-gpoak_b_2 <- doaksf_seg_1 %>%
+gpoak_b_2 <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(!(is.na(sfgroupcat1))) %>%
   group_by(sfgroupcat1, season1, wday) %>%
@@ -600,7 +661,7 @@ gpoak_c_2 %>%
   kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 # report frequency in each category
-gpoak_b_2_freq <- doaksf_seg_1 %>%
+gpoak_b_2_freq <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(seg == "total") %>%
   filter(!(is.na(sfgroupcat1))) %>%
@@ -643,7 +704,7 @@ After discussing with Anthony, the suggestion was to look at days when SF occupa
 Graph of occupancy z-scores (number of standard deviations above or below mean)
 ```{r}
 
-doaksf_seg_1 %>%
+doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(seg == "total") %>%
   ggplot(aes(x=sfzocc1, y=oakzocc1)) +
@@ -657,7 +718,7 @@ doaksf_seg_1 %>%
 Oakland occupancy during various sf occupancy categories based on z-score of total occupancy
 ```{r}
 # mean occupancy in all categories
-tk2oak_a <- doaksf_seg_1 %>%
+tk2oak_a <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(seg == "total") %>%
   group_by(season1, wday) %>%
@@ -671,7 +732,7 @@ tk2oak_a %>%
   kable(digits=c(1,rep(3,8)), format.args = list(big.mark = ","))
 
 # mean occupancy by categories
-tk2oak_b <- doaksf_seg_1 %>%
+tk2oak_b <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(seg == "total") %>%
   group_by(season1, wday, sfzocc1_cat) %>%
@@ -691,7 +752,7 @@ tk2oak_c %>%
   kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
 # report frequency in each category
-tk2oak_b_freq <- doaksf_seg_1 %>%
+tk2oak_b_freq <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(seg == "total") %>%
   filter(!(is.na(sfzocc1_cat))) %>%
@@ -730,7 +791,7 @@ tk2oak_e %>%
 Graph of occupancy z-scores (group for sf, total for oak). I think the striations come from the fact that we've calculated a z-score relative to 42 different category means for each. So dates that fit in a certain season-wday are being divided by the same number, and maybe the relationship between those two numbers (sf and oak) stays as a consistent underlying pattern).
 ```{r}
 
-doaksf_seg_1 %>%
+doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(seg == "total") %>%
   ggplot(aes(x=sfzgroup1, y=oakzocc1)) +
@@ -745,7 +806,7 @@ doaksf_seg_1 %>%
 Oakland occupancy during various sf group demand categories based on z-score of group occupancy. The NAs in sfzgroup1_cat are days when we don't have SF group data. I decided to drop them so that the relative frequency would make sense.
 ```{r}
 # mean occupancy in all categories
-tk2oak_a_2 <- doaksf_seg_1 %>%
+tk2oak_a_2 <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(seg == "total") %>%
   filter(!(is.na(sfzgroup1_cat))) %>%
@@ -760,7 +821,7 @@ tk2oak_a_2 %>%
   kable(digits=c(1,rep(3,8)), format.args = list(big.mark = ","))
 
 # mean occupancy by categories
-tk2oak_b_2 <- doaksf_seg_1 %>%
+tk2oak_b_2 <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(seg == "total") %>%
   filter(!(is.na(sfzgroup1_cat))) %>%
@@ -781,7 +842,7 @@ tk2oak_c_2 %>%
   kable(digits=c(1,rep(3,8)), format.args = list(big.mark = ","))
 
 # report frequency in each category
-tk2oak_b_2_freq <- doaksf_seg_1 %>%
+tk2oak_b_2_freq <- doaksf_seg %>%
   filter(geo_ttl == "oak") %>%
   filter(seg == "total") %>%
   filter(!(is.na(sfzgroup1_cat))) %>%
