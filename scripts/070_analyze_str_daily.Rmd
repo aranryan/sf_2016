@@ -495,6 +495,7 @@ dsfcity_1 %>%
   group_by(season1, yeargp, wday, sfocccat1) %>%
   summarise (adr = mean(adr)) %>%
   ungroup() %>%
+  complete(season1, yeargp, wday, sfocccat1) %>%
   spread(wday, adr) %>%
   kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
