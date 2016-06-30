@@ -1216,15 +1216,15 @@ season1              yeargp    sfocccat1         Sun       Mon      Tues       W
 06_Nov               yr14-15   (0.9,0.95]         NA   271.530   258.188   239.567   244.493   206.220   265.320
 06_Nov               yr14-15   (0.95,1]           NA   271.130   252.260   258.155        NA        NA   207.930
 
-
-
 Average ADR change by occupancy category
 (So this is the average ADR by year and occ category, and then the percentage change relative to the yr11-12 period as a base.)
 
 ```r
 dsfcity_1 %>%
   group_by(yeargp, sfocccat1) %>%
-  summarise (adr = mean(adr)) %>%
+  summarise (adr = mean(adr),
+             n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
   ungroup() %>%
   complete(yeargp, sfocccat1) %>%
   mutate(adr_chg = adr / adr[yeargp == "yr11-12"] -1) %>%
@@ -1233,23 +1233,46 @@ dsfcity_1 %>%
 
 
 
-yeargp    sfocccat1         adr   adr_chg
---------  -----------  --------  --------
-yr11-12   (0,0.7]       149.138     0.000
-yr11-12   (0.7,0.8]     163.102     0.000
-yr11-12   (0.8,0.9]     179.596     0.000
-yr11-12   (0.9,0.95]    198.099     0.000
-yr11-12   (0.95,1]      220.988     0.000
-yr13      (0,0.7]       158.997     0.066
-yr13      (0.7,0.8]     180.142     0.104
-yr13      (0.8,0.9]     204.280     0.137
-yr13      (0.9,0.95]    216.603     0.093
-yr13      (0.95,1]      246.745     0.117
-yr14-15   (0,0.7]       174.285     0.169
-yr14-15   (0.7,0.8]     197.898     0.213
-yr14-15   (0.8,0.9]     225.337     0.255
-yr14-15   (0.9,0.95]    255.616     0.290
-yr14-15   (0.95,1]      282.735     0.279
+yeargp    sfocccat1         adr     n    freq   adr_chg
+--------  -----------  --------  ----  ------  --------
+yr11-12   (0,0.7]       149.138   151   0.207     0.000
+yr11-12   (0.7,0.8]     163.102   138   0.189     0.000
+yr11-12   (0.8,0.9]     179.596   222   0.304     0.000
+yr11-12   (0.9,0.95]    198.099   133   0.182     0.000
+yr11-12   (0.95,1]      220.988    87   0.119     0.000
+yr13      (0,0.7]       158.997    54   0.148     0.066
+yr13      (0.7,0.8]     180.142    58   0.159     0.104
+yr13      (0.8,0.9]     204.280   100   0.274     0.137
+yr13      (0.9,0.95]    216.603    78   0.214     0.093
+yr13      (0.95,1]      246.745    75   0.205     0.117
+yr14-15   (0,0.7]       174.285    85   0.116     0.169
+yr14-15   (0.7,0.8]     197.898   107   0.147     0.213
+yr14-15   (0.8,0.9]     225.337   214   0.293     0.255
+yr14-15   (0.9,0.95]    255.616   204   0.279     0.290
+yr14-15   (0.95,1]      282.735   120   0.164     0.279
+
+Average ADR change 
+(So this is the average ADR by year , and then the percentage change relative to the yr11-12 period as a base.)
+
+```r
+dsfcity_1 %>%
+  group_by(yeargp) %>%
+  summarise (adr = mean(adr),
+             n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  complete(yeargp) %>%
+  mutate(adr_chg = adr / adr[yeargp == "yr11-12"] -1) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+```
+
+
+
+yeargp         adr     n   freq   adr_chg
+--------  --------  ----  -----  --------
+yr11-12    178.484   731    0.4     0.000
+yr13       205.104   365    0.2     0.149
+yr14-15    233.267   730    0.4     0.307
 
 
 
@@ -1264,7 +1287,7 @@ dsfcity_1 %>%
   geom_point()
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-26-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-27-1.png)<!-- -->
 
 # IV. Oak daily as related to SF
 
@@ -1280,7 +1303,7 @@ doaksf_1 %>%
   geom_point()
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-27-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-28-1.png)<!-- -->
 
 With segment info   
 
@@ -1297,7 +1320,7 @@ doaksf_seg %>%
 ## Warning: Removed 279 rows containing missing values (geom_point).
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-28-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-29-1.png)<!-- -->
 
 ## IV.A. Occupancy impact to Oak grouped by SF-based categories: _Initial approach_
 This initial approach is based on the simple occupancy categories for SF, rather than z-scores)  
@@ -1775,7 +1798,7 @@ doaksf_seg %>%
   geom_point()
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-33-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-34-1.png)<!-- -->
 
 
 ******
@@ -2034,6 +2057,61 @@ allcats       05_Oct                1.000   1.000   1.000   1.000   1.000   1.00
 (2,2.5]       06_Nov                   NA      NA      NA      NA      NA      NA      NA     NaN
 allcats       06_Nov                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
 
+Take the prior table and sort by category rather than season
+
+```r
+tk2oak_e %>%
+  arrange(sfzocc1_cat) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+```
+
+
+
+sfzocc1_cat   season1                 Sun     Mon    Tues     Wed   Thurs     Fri     Sat    mean
+------------  -------------------  ------  ------  ------  ------  ------  ------  ------  ------
+(-1,0]        01_Jan-Dec            0.980   0.935   1.020   0.920   0.962   0.969   0.959   0.964
+(-1,0]        02_Feb-Mar-Apr-May    0.942   0.949   0.955   0.966   0.970   0.961   0.942   0.955
+(-1,0]        03_Jun                0.940   0.970   0.991   0.976   0.982   0.951   0.931   0.963
+(-1,0]        04_Jul-Aug-Sep        0.966   0.965   0.965   0.961   0.984   0.968   0.974   0.969
+(-1,0]        05_Oct                0.974   0.947   0.988   1.009   1.011   1.003   0.971   0.986
+(-1,0]        06_Nov                0.901   0.838   0.914   0.925   0.962   0.952   0.919   0.916
+(-2,-1]       01_Jan-Dec            0.902   0.831   0.711   0.722   0.758   0.813   0.774   0.787
+(-2,-1]       02_Feb-Mar-Apr-May    0.883   0.806   0.886   0.912   0.929   0.889   0.846   0.879
+(-2,-1]       03_Jun                0.951      NA      NA      NA   0.915   0.901   0.911   0.919
+(-2,-1]       04_Jul-Aug-Sep        0.993   0.836   0.795   0.841   0.900   0.924   0.960   0.893
+(-2,-1]       05_Oct                0.923   0.990   0.790   0.899   0.843   0.748      NA   0.865
+(-2,-1]       06_Nov                0.796   0.782   0.653   0.656   0.805   0.914   0.808   0.773
+(-5,-2]       01_Jan-Dec               NA   0.577      NA      NA   0.720      NA      NA   0.649
+(-5,-2]       02_Feb-Mar-Apr-May    0.851   0.851   0.866   0.902   0.876   0.863   0.812   0.860
+(-5,-2]       03_Jun                   NA   0.830   0.890      NA      NA      NA      NA   0.860
+(-5,-2]       04_Jul-Aug-Sep        0.877   0.676   0.731   0.740   0.807   0.926   0.911   0.810
+(-5,-2]       05_Oct                   NA      NA   0.996   0.742   0.804   0.766   0.783   0.818
+(-5,-2]       06_Nov                   NA      NA      NA      NA      NA      NA      NA     NaN
+(0,1]         01_Jan-Dec            0.977   1.013   1.093   1.114   1.053   1.047   1.047   1.049
+(0,1]         02_Feb-Mar-Apr-May    1.027   1.031   1.019   1.016   1.019   1.021   1.016   1.021
+(0,1]         03_Jun                1.018   1.011   1.017   1.014   1.006   1.014   1.038   1.017
+(0,1]         04_Jul-Aug-Sep        1.011   1.053   1.043   1.039   1.036   1.019   1.022   1.032
+(0,1]         05_Oct                1.005   1.003   1.009   1.036   1.033   1.035   1.023   1.020
+(0,1]         06_Nov                1.082   1.083   1.134   1.132   1.087   1.043   1.063   1.089
+(1,2]         01_Jan-Dec            1.139   1.190   1.148   1.179   1.153   1.074   1.095   1.140
+(1,2]         02_Feb-Mar-Apr-May    1.166   1.118   1.095   1.067   1.064   1.114   1.171   1.114
+(1,2]         03_Jun                1.059   1.060      NA   1.016   1.029   1.100   1.083   1.058
+(1,2]         04_Jul-Aug-Sep        1.080      NA      NA      NA   1.075   1.081   1.049   1.071
+(1,2]         05_Oct                1.157   1.064   1.068      NA   1.051   1.081      NA   1.084
+(1,2]         06_Nov                1.177   1.168      NA      NA   1.099   1.127   1.240   1.162
+(2,2.5]       01_Jan-Dec               NA      NA      NA      NA      NA   1.316      NA   1.316
+(2,2.5]       02_Feb-Mar-Apr-May    1.168      NA      NA      NA      NA      NA      NA   1.168
+(2,2.5]       03_Jun                   NA      NA      NA      NA      NA      NA      NA     NaN
+(2,2.5]       04_Jul-Aug-Sep           NA      NA      NA      NA      NA      NA      NA     NaN
+(2,2.5]       05_Oct                   NA      NA      NA      NA      NA      NA      NA     NaN
+(2,2.5]       06_Nov                   NA      NA      NA      NA      NA      NA      NA     NaN
+allcats       01_Jan-Dec            1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+allcats       02_Feb-Mar-Apr-May    1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+allcats       03_Jun                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+allcats       04_Jul-Aug-Sep        1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+allcats       05_Oct                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+allcats       06_Nov                1.000   1.000   1.000   1.000   1.000   1.000   1.000   1.000
+
 
 Graph of occupancy z-scores (group for sf, total for oak). I think the striations come from the fact that we've calculated a z-score relative to 42 different category means for each. So dates that fit in a certain season-wday are being divided by the same number, and maybe the relationship between those two numbers (sf and oak) stays as a consistent underlying pattern).
 
@@ -2049,7 +2127,7 @@ doaksf_seg %>%
 ## Warning: Removed 279 rows containing missing values (geom_point).
 ```
 
-![](070_analyze_str_daily_files/figure-html/unnamed-chunk-36-1.png)<!-- -->
+![](070_analyze_str_daily_files/figure-html/unnamed-chunk-38-1.png)<!-- -->
 
 
 ******

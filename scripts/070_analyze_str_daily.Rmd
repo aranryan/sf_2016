@@ -501,17 +501,33 @@ dsfcity_1 %>%
 
 ```
 
-
-
 Average ADR change by occupancy category
 (So this is the average ADR by year and occ category, and then the percentage change relative to the yr11-12 period as a base.)
 ```{r}
 
 dsfcity_1 %>%
   group_by(yeargp, sfocccat1) %>%
-  summarise (adr = mean(adr)) %>%
+  summarise (adr = mean(adr),
+             n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
   ungroup() %>%
   complete(yeargp, sfocccat1) %>%
+  mutate(adr_chg = adr / adr[yeargp == "yr11-12"] -1) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
+
+```
+
+Average ADR change 
+(So this is the average ADR by year , and then the percentage change relative to the yr11-12 period as a base.)
+```{r}
+
+dsfcity_1 %>%
+  group_by(yeargp) %>%
+  summarise (adr = mean(adr),
+             n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  complete(yeargp) %>%
   mutate(adr_chg = adr / adr[yeargp == "yr11-12"] -1) %>%
   kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
@@ -803,6 +819,13 @@ tk2oak_e <- tk2oak_d %>%
 tk2oak_e %>%
   kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 
+```
+
+Take the prior table and sort by category rather than season
+```{r}
+tk2oak_e %>%
+  arrange(sfzocc1_cat) %>%
+  kable(digits=c(1,rep(3,9)), format.args = list(big.mark = ","))
 ```
 
 

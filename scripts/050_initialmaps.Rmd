@@ -115,18 +115,8 @@ ggmap(map_background) +
 
 attr(map_background, "bb")$ll.lon
 
-coord_map(projection="mercator", 
-+               xlim=c(attr(houston.map, "bb")$ll.lon, attr(houston.map, "bb")$ur.lon),
-+               ylim=c(attr(houston.map, "bb")$ll.lat, attr(houston.map, "bb")$ur.lat)) 
-
-
 bbZ10
   
-  
-  ggmap(map_background) +
-  coord_map(xlim=c(-123.1, -122), ylim=c(37.1, 38.2))
-
-
 map_background <- get_googlemap(center=cent, size=c(640,640), scale = 2, zoom = 9, style=style_string_background, maptype="roadmap", key=gkey)
 ggmap(map_background)
 
@@ -145,17 +135,13 @@ map_lines <- get_stamenmap(location=cent, size=c(640,640), zoom = 9, map="toner-
 map_labels <- get_map(location=cent, zoom = 9, map="toner-labels")
 ggmap(map_labels)
 
-ggmap(map_background) +
-
+mymap <- ggmap(map_background) +
   geom_point(data = temp,
              aes(x = lon, y = lat, size = 1),
              color = "blue", alpha = 0.8) + 
   scale_size_identity(guide = "none") + 
-      inset_ggmap(map_labels) +
-#  inset_ggmap(map_lines) + 
-
-
-
+      inset_ggmap(map_labels) 
+#  inset_ggmap(map_lines) 
 
 
 
@@ -247,10 +233,13 @@ enlarge.box.modified <- function(d,...){
 boxes <-
   list("top.bumptwice", "calc.boxes",  "enlarge.box.modified", "draw.rects.modified")
 
+map_name <- "temp"
+
 mymap + 
   geom_point(data = temp,aes(x = lon, y = lat), 
              alpha = 1, fill = "red", pch = 21, size = 6) + 
   geom_dl(data = temp, aes(label = map_name), method = list(dl.trans(y = y + 0.4), 
                                                         "boxes", cex = .8, fontface = "bold"))
 ggsave(filename="output_data/mymap_dllabels.png", width=6.5, height=6.5)
+
 ```
